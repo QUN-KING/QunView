@@ -2,9 +2,13 @@ package com.qunking.qunview
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Button
 import android.widget.LinearLayout
@@ -13,6 +17,30 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 
 class MainActivity : ComponentActivity() {
+    private var receiverRegistered = false
+    private val serviceEvents = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                ScreenShareService.ACTION_SESSION_READY -> {
+                    val link = intent.getStringExtra(ScreenShareService.EXTRA_VIEWER_LINK) ?: return
+                    val share = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, "View my QunView screen (with my permission): $link")
+                    }
+                    startActivity(Intent.createChooser(share, "Share QunView link"))
+                }
+                ScreenShareService.ACTION_ERROR -> {
+                    val message = intent.getStringExtra(ScreenShareService.EXTRA_ERROR) ?: "Screen sharing could not start."
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("QunView")
+                        .setMessage(message)
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
+    }
+
     private val capturePermission = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -45,6 +73,17 @@ class MainActivity : ComponentActivity() {
             addView(title)
             addView(start)
         })
+        val filter = IntentFilter().apply {
+            addAction(ScreenShareService.ACTION_SESSION_READY)
+            addAction(ScreenShareService.ACTION_ERROR)
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(serviceEvents, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(serviceEvents, filter)
+        }
+        receiverRegistered = true
         window.decorView.post { requestScreenPermission() }
     }
 
@@ -66,5 +105,13 @@ class MainActivity : ComponentActivity() {
                 startActivity(uninstall)
             }
             .show()
+    }
+
+    override fun onDestroy() {
+        if (receiverRegistered) {
+            unregisterReceiver(serviceEvents)
+            receiverRegistered = false
+        }
+        super.onDestroy()
     }
 }
