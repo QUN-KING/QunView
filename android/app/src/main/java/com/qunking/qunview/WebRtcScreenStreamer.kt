@@ -9,7 +9,6 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
-import org.webrtc.CameraVideoCapturer
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
@@ -181,7 +180,10 @@ class WebRtcScreenStreamer(
                         data.getString("sdp")
                     )
                     peer?.setRemoteDescription(object : SdpObserver {
-                        override fun onSetSuccess() {}
+                        override fun onSetSuccess() {
+                            pendingIce.forEach { peer?.addIceCandidate(it) }
+                            pendingIce.clear()
+                        }
                         override fun onSetFailure(error: String) { onError("Viewer answer was rejected.") }
                         override fun onCreateSuccess(description: SessionDescription) {}
                         override fun onCreateFailure(error: String) {}
@@ -194,7 +196,7 @@ class WebRtcScreenStreamer(
                         data.optInt("sdpMLineIndex"),
                         data.getString("candidate")
                     )
-                    if (peer == null) pendingIce.add(candidate) else peer?.addIceCandidate(candidate)
+                    if (peer?.remoteDescription == null) pendingIce.add(candidate) else peer?.addIceCandidate(candidate)
                 }
                 "error" -> onError(message.optString("message", "Signaling error."))
             }
