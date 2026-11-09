@@ -98,6 +98,14 @@ wss.on("connection", (socket, request) => {
         (!msg.data || typeof msg.data !== "object" || Array.isArray(msg.data))) {
       return send(socket, { type: "error", message: "Invalid signaling data" });
     }
+    if (["offer", "answer"].includes(msg.type) &&
+        (msg.data.type !== msg.type || typeof msg.data.sdp !== "string" || msg.data.sdp.length > 48 * 1024)) {
+      return send(socket, { type: "error", message: "Invalid session description" });
+    }
+    if (msg.type === "ice-candidate" &&
+        (typeof msg.data.candidate !== "string" || msg.data.candidate.length > 4 * 1024)) {
+      return send(socket, { type: "error", message: "Invalid ICE candidate" });
+    }
 
     for (const peer of session.clients) {
       if (peer !== socket) send(peer, { type: msg.type, data: msg.data });
