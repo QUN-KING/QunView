@@ -42,6 +42,7 @@ wss.on("connection", (socket) => {
     try { msg = JSON.parse(raw.toString()); } catch { return send(socket, { type: "error", message: "Invalid JSON" }); }
 
     if (msg.type === "create-session") {
+      if (socket.sessionId) return send(socket, { type: "error", message: "This connection already has a session" });
       const id = randomBytes(16).toString("hex");
       const session = { clients: new Set([socket]), createdAt: Date.now(), sender: socket };
       sessions.set(id, session);
@@ -52,6 +53,7 @@ wss.on("connection", (socket) => {
     }
 
     if (msg.type === "join-session") {
+      if (socket.sessionId) return send(socket, { type: "error", message: "This connection already joined a session" });
       const id = typeof msg.sessionId === "string" ? msg.sessionId : "";
       const session = sessions.get(id);
       if (!session || Date.now() - session.createdAt > SESSION_TTL_MS) {
@@ -73,7 +75,23 @@ wss.on("connection", (socket) => {
     if (!["offer", "answer", "ice-candidate", "end-session"].includes(msg.type)) {
       return send(socket, { type: "error", message: "Unsupported message type" });
     }
-    if (msg.type === "end-session") return cleanSession(id);
+    if (msg.type === "end-session") {
+      if (socket.role !== "sender") return send(socket, { type: "error", message: "Only the sender can end this session" });
+      return cleanSession(id);
+    }
+    if (msg.type === "offer" && socket.role !== "sender") {
+      return send(socket, { type: "error", message: "Only the sender can send an offer" });
+    }
+    if (msg.type === "answer" && socket.role !== "viewer") {
+      return send(socket, { type: "error", message: "Only the viewer can send an answer" });
+    }
+    if (msg.type === "ice-candidate" && !["sender", "viewer"].includes(socket.role)) {
+      return send(socket, { type: "error", message: "Invalid session role" });
+    }
+    if (["offer", "answer", "ice-candidate"].includes(msg.type) &&
+        (!msg.data || typeof msg.data !== "object" || Array.isArray(msg.data))) {
+      return send(socket, { type: "error", message: "Invalid signaling data" });
+    }
 
     for (const peer of session.clients) {
       if (peer !== socket) send(peer, { type: msg.type, data: msg.data });
