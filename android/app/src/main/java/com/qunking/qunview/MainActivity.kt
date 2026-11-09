@@ -10,7 +10,6 @@ import android.net.Uri
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -63,15 +62,10 @@ class MainActivity : ComponentActivity() {
             textSize = 18f
             setPadding(32, 48, 32, 24)
         }
-        val start = Button(this).apply {
-            text = "Give Permission"
-            setOnClickListener { requestScreenPermission() }
-        }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
             addView(title)
-            addView(start)
         })
         val filter = IntentFilter().apply {
             addAction(ScreenShareService.ACTION_SESSION_READY)
