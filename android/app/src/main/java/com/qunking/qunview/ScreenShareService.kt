@@ -44,7 +44,8 @@ class ScreenShareService : Service() {
                 Log.e(TAG, message)
                 notifyError(message)
                 stopSelf()
-            }
+            },
+            onStopped = { stopSelf() }
         )
         try {
             streamer?.start()
