@@ -27,8 +27,7 @@ import java.util.concurrent.TimeUnit
 /**
  * Sender-side WebRTC pipeline.
  *
- * Set SIGNALING_URL and VIEWER_BASE_URL after deploying the signaling server
- * and static viewer website over HTTPS/WSS. No screen frames are recorded.
+ * No screen frames are recorded or saved.
  */
 class WebRtcScreenStreamer(
     private val context: Context,
@@ -39,7 +38,7 @@ class WebRtcScreenStreamer(
     companion object {
         private const val TAG = "QunViewWebRTC"
         private const val SIGNALING_URL = "wss://qunview-signaling.onrender.com"
-        private const val VIEWER_BASE_URL = "https://YOUR-VIEWER-HOST"
+        private const val VIEWER_BASE_URL = "https://qunview-viewer.onrender.com"
     }
 
     private val client = OkHttpClient.Builder()
@@ -57,10 +56,6 @@ class WebRtcScreenStreamer(
     private var pendingIce = mutableListOf<IceCandidate>()
 
     fun start() {
-        if (SIGNALING_URL.contains("YOUR-")) {
-            onError("Signaling server has not been deployed yet.")
-            return
-        }
         initializeWebRtc()
         val request = Request.Builder().url(SIGNALING_URL).build()
         socket = client.newWebSocket(request, object : WebSocketListener() {
