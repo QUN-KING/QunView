@@ -8,6 +8,7 @@ const signalingUrl = params.get("signal");
 
 let socket;
 let peer;
+let pendingIceCandidates = [];
 
 function setStatus(message) { statusText.textContent = message; }
 function showWaiting(message) {
@@ -70,8 +71,16 @@ async function connectViewer() {
       await peer.setLocalDescription(answer);
       socket.send(JSON.stringify({ type: "answer", data: peer.localDescription }));
       setStatus("Negotiating secure video connection…");
+      for (const candidate of pendingIceCandidates) {
+        try { await peer.addIceCandidate(candidate); } catch (error) { console.error("Queued ICE candidate rejected", error); }
+      }
+      pendingIceCandidates = [];
     } else if (message.type === "ice-candidate" && message.data) {
-      try { await peer.addIceCandidate(message.data); } catch (error) { console.error("ICE candidate rejected", error); }
+      if (!peer.remoteDescription) {
+        pendingIceCandidates.push(message.data);
+      } else {
+        try { await peer.addIceCandidate(message.data); } catch (error) { console.error("ICE candidate rejected", error); }
+      }
     } else if (message.type === "error") {
       setStatus(message.message || "Unable to join session.");
     } else if (message.type === "viewer-left") {
