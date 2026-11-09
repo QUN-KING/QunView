@@ -33,7 +33,8 @@ class WebRtcScreenStreamer(
     private val context: Context,
     private val projectionPermission: Intent,
     private val onSessionReady: (String) -> Unit,
-    private val onError: (String) -> Unit
+    private val onError: (String) -> Unit,
+    private val onStopped: () -> Unit
 ) {
     companion object {
         private const val TAG = "QunViewWebRTC"
@@ -235,6 +236,7 @@ class WebRtcScreenStreamer(
         egl = null
         pendingRemoteIce.clear()
         client.dispatcher.executorService.shutdown()
+        onStopped()
     }
 
     private fun stopPeerOnly() {
