@@ -44,6 +44,7 @@ class WebRtcScreenStreamer(
     private val client = OkHttpClient.Builder()
         .pingInterval(20, TimeUnit.SECONDS)
         .build()
+    @Volatile private var stopped = false
     private var socket: WebSocket? = null
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
@@ -56,25 +57,31 @@ class WebRtcScreenStreamer(
     private val pendingRemoteIce = mutableListOf<IceCandidate>()
 
     fun start() {
+        if (stopped) return
         initializeWebRtc()
         val request = Request.Builder().url(SIGNALING_URL).build()
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (stopped) {
+                    webSocket.close(1000, "Sender stopped")
+                    return
+                }
                 webSocket.send(JSONObject().put("type", "create-session").toString())
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                handleSignal(text)
+                if (!stopped) handleSignal(text)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (stopped) return
                 Log.e(TAG, "Signaling connection failed", t)
                 onError("Could not connect to the signaling server.")
                 stop()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                stopPeerOnly()
+                stop()
             }
         })
     }
@@ -107,7 +114,7 @@ class WebRtcScreenStreamer(
     }
 
     private fun createPeer() {
-        if (peer != null) return
+        if (stopped || peer != null) return
         val iceServers = listOf(
             PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
         )
@@ -200,15 +207,20 @@ class WebRtcScreenStreamer(
     }
 
     private fun sendSignal(message: JSONObject) {
-        socket?.send(message.toString())
+        if (!stopped) socket?.send(message.toString())
     }
 
+    @Synchronized
     fun stop() {
+        if (stopped) return
+        stopped = true
         socket?.send(JSONObject().put("type", "end-session").toString())
         socket?.close(1000, "Sender stopped")
         socket = null
         stopPeerOnly()
-        try { capturer?.stopCapture() } catch (_: Exception) {}
+        try { capturer?.stopCapture() } catch (error: Exception) {
+            Log.w(TAG, "Screen capture already stopped", error)
+        }
         capturer?.dispose()
         capturer = null
         videoTrack?.dispose()
@@ -221,6 +233,7 @@ class WebRtcScreenStreamer(
         factory = null
         egl?.release()
         egl = null
+        pendingRemoteIce.clear()
         client.dispatcher.executorService.shutdown()
     }
 
