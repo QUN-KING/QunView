@@ -38,7 +38,7 @@ class WebRtcScreenStreamer(
 ) {
     companion object {
         private const val TAG = "QunViewWebRTC"
-        private const val SIGNALING_URL = "wss://YOUR-SIGNALING-HOST"
+        private const val SIGNALING_URL = "wss://qunview-signaling.onrender.com"
         private const val VIEWER_BASE_URL = "https://YOUR-VIEWER-HOST"
     }
 
