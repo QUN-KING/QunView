@@ -3,32 +3,19 @@ package com.qunking.qunview
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 
 class ScreenShareService : Service() {
-    private var projection: MediaProjection? = null
-    private val projectionCallback = object : MediaProjection.Callback() {
-        override fun onStop() {
-            stopSharing()
-        }
-    }
+    private var streamer: WebRtcScreenStreamer? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSharing()
-            return START_NOT_STICKY
-        }
-
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
 
-        if (projection != null) return START_NOT_STICKY
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val resultData = if (Build.VERSION.SDK_INT >= 33) {
             intent?.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
@@ -36,30 +23,47 @@ class ScreenShareService : Service() {
             @Suppress("DEPRECATION")
             intent?.getParcelableExtra(EXTRA_RESULT_DATA)
         }
-        if (resultData == null) {
-            stopSharing()
+
+        if (resultCode == 0 || resultData == null) {
+            notifyError("Android screen permission was not received.")
+            stopSelf()
             return START_NOT_STICKY
         }
+        if (streamer != null) return START_NOT_STICKY
 
-        val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projection = manager.getMediaProjection(resultCode, resultData)
-        projection?.registerCallback(projectionCallback, android.os.Handler(mainLooper))
-        // Screen capture and WebRTC transport are the next integration step.
+        // The service is foreground before ScreenCapturerAndroid creates MediaProjection.
+        // Do not call getMediaProjection() here: Android grants each consent token once.
+        streamer = WebRtcScreenStreamer(
+            applicationContext,
+            resultData,
+            onSessionReady = { viewerLink ->
+                sendBroadcast(Intent(ACTION_SESSION_READY).setPackage(packageName)
+                    .putExtra(EXTRA_VIEWER_LINK, viewerLink))
+            },
+            onError = { message ->
+                Log.e(TAG, message)
+                notifyError(message)
+                stopSelf()
+            }
+        )
+        try {
+            streamer?.start()
+        } catch (error: Exception) {
+            Log.e(TAG, "Unable to start screen sender", error)
+            notifyError("Could not start screen sharing.")
+            stopSelf()
+        }
         return START_NOT_STICKY
     }
 
-    private fun stopSharing() {
-        projection?.unregisterCallback(projectionCallback)
-        projection?.stop()
-        projection = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+    private fun notifyError(message: String) {
+        sendBroadcast(Intent(ACTION_ERROR).setPackage(packageName).putExtra(EXTRA_ERROR, message))
     }
 
     override fun onDestroy() {
-        projection?.unregisterCallback(projectionCallback)
-        projection?.stop()
-        projection = null
+        streamer?.stop()
+        streamer = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
@@ -75,30 +79,27 @@ class ScreenShareService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val stopIntent = Intent(this, ScreenShareService::class.java).setAction(ACTION_STOP)
-        val stopPendingIntent = PendingIntent.getService(
-            this, 42, stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
-        return builder
-            .setContentTitle("QunView screen sharing")
-            .setContentText("Your screen-sharing permission is active.")
+        return builder.setContentTitle("QunView screen sharing")
+            .setContentText("Screen sharing is active with your permission.")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setOngoing(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop sharing", stopPendingIntent)
             .build()
     }
 
     companion object {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
-        private const val ACTION_STOP = "com.qunking.qunview.STOP_SHARING"
+        const val ACTION_SESSION_READY = "com.qunking.qunview.SESSION_READY"
+        const val ACTION_ERROR = "com.qunking.qunview.SHARING_ERROR"
+        const val EXTRA_VIEWER_LINK = "viewer_link"
+        const val EXTRA_ERROR = "sharing_error"
+        private const val TAG = "QunViewService"
         private const val CHANNEL_ID = "qunview_screen_share"
         private const val NOTIFICATION_ID = 41
     }
