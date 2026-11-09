@@ -27,10 +27,13 @@ function send(socket, payload) {
 function cleanSession(id) {
   const session = sessions.get(id);
   if (!session) return;
+  // Remove first so close events cannot recursively clean the same session.
+  sessions.delete(id);
+  clearTimeout(session.timer);
   for (const client of session.clients) {
+    client.sessionId = undefined;
     if (client.readyState === WebSocket.OPEN) client.close(1000, "Session ended");
   }
-  sessions.delete(id);
 }
 
 wss.on("connection", (socket) => {
@@ -44,7 +47,7 @@ wss.on("connection", (socket) => {
       sessions.set(id, session);
       socket.sessionId = id;
       socket.role = "sender";
-      socket.sessionTimer = setTimeout(() => cleanSession(id), SESSION_TTL_MS);
+      session.timer = setTimeout(() => cleanSession(id), SESSION_TTL_MS);
       return send(socket, { type: "session-created", sessionId: id, expiresInSeconds: SESSION_TTL_MS / 1000 });
     }
 
@@ -83,7 +86,6 @@ wss.on("connection", (socket) => {
     if (!session) return;
     session.clients.delete(socket);
     if (socket.role === "sender" || session.clients.size === 0) {
-      clearTimeout(socket.sessionTimer);
       cleanSession(id);
     } else {
       send(session.sender, { type: "viewer-left" });
