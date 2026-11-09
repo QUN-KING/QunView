@@ -36,7 +36,13 @@ function cleanSession(id) {
   }
 }
 
-wss.on("connection", (socket) => {
+wss.on("connection", (socket, request) => {
+  const origin = request.headers.origin;
+  if (origin && origin !== "https://qunview-viewer.onrender.com") {
+    socket.close(1008, "Origin not allowed");
+    return;
+  }
+
   socket.on("message", (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return send(socket, { type: "error", message: "Invalid JSON" }); }
