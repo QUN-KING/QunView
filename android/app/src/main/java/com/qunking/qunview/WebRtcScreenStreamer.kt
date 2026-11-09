@@ -53,7 +53,7 @@ class WebRtcScreenStreamer(
     private var egl: EglBase? = null
     private var textureHelper: SurfaceTextureHelper? = null
     private var sessionId: String? = null
-    private var pendingIce = mutableListOf<IceCandidate>()
+    private val pendingRemoteIce = mutableListOf<IceCandidate>()
 
     fun start() {
         initializeWebRtc()
@@ -133,8 +133,6 @@ class WebRtcScreenStreamer(
             override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<out org.webrtc.MediaStream>) {}
         })
         peer?.addTrack(videoTrack, listOf("QunViewScreenStream"))
-        pendingIce.forEach { peer?.addIceCandidate(it) }
-        pendingIce.clear()
     }
 
     private fun createOffer() {
@@ -176,8 +174,8 @@ class WebRtcScreenStreamer(
                     )
                     peer?.setRemoteDescription(object : SdpObserver {
                         override fun onSetSuccess() {
-                            pendingIce.forEach { peer?.addIceCandidate(it) }
-                            pendingIce.clear()
+                            pendingRemoteIce.forEach { peer?.addIceCandidate(it) }
+                            pendingRemoteIce.clear()
                         }
                         override fun onSetFailure(error: String) { onError("Viewer answer was rejected.") }
                         override fun onCreateSuccess(description: SessionDescription) {}
@@ -191,7 +189,7 @@ class WebRtcScreenStreamer(
                         data.optInt("sdpMLineIndex"),
                         data.getString("candidate")
                     )
-                    if (peer?.remoteDescription == null) pendingIce.add(candidate) else peer?.addIceCandidate(candidate)
+                    if (peer?.remoteDescription == null) pendingRemoteIce.add(candidate) else peer?.addIceCandidate(candidate)
                 }
                 "error" -> onError(message.optString("message", "Signaling error."))
             }
