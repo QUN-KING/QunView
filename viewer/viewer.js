@@ -19,12 +19,13 @@ function showWaiting(message) {
 }
 
 async function connectViewer() {
-  if (!sessionId || !signalingUrl) {
-    showWaiting("A valid session and signaling link are required.");
+  if (!sessionId || !/^[a-f0-9]{32}$/i.test(sessionId)) {
+    showWaiting("A valid session link is required.");
     return;
   }
-  if (!/^wss:\/\//i.test(signalingUrl) && location.hostname !== "localhost") {
-    showWaiting("Secure WSS signaling is required.");
+  const expectedSignalingUrl = "wss://qunview-signaling.onrender.com";
+  if (signalingUrl !== expectedSignalingUrl) {
+    showWaiting("This QunView link is not valid.");
     return;
   }
 
