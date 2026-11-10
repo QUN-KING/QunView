@@ -231,7 +231,19 @@ class WebRtcScreenStreamer(
                     )
                     if (peer?.remoteDescription == null) pendingRemoteIce.add(candidate) else peer?.addIceCandidate(candidate)
                 }
-                "error" -> onError(message.optString("message", "Signaling error."))
+                "error" -> {
+                    val errorMessage = message.optString("message", "Signaling error.")
+                    if (errorMessage == "Session cannot be resumed" && socket != null) {
+                        Log.i(TAG, "Old session expired; creating a fresh session")
+                        sessionId = null
+                        resumeToken = null
+                        stopPeerOnly()
+                        pendingRemoteIce.clear()
+                        socket?.send(JSONObject().put("type", "create-session").toString())
+                    } else {
+                        onError(errorMessage)
+                    }
+                }
             }
         } catch (error: Exception) {
             Log.e(TAG, "Invalid signaling message", error)
