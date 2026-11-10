@@ -42,7 +42,7 @@ async function connectViewer() {
       video.classList.add("active");
       placeholder.hidden = true;
       setStatus("Live screen");
-      video.play().catch(() => setStatus("Tap play to view the live screen."));
+      video.play().catch(() => setStatus("Video playback was blocked by the browser. Refresh the viewer page and try again."));
     }
   };
 
