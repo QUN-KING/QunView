@@ -75,7 +75,10 @@ wss.on("connection", (socket, request) => {
       socket.role = "sender";
       send(socket, { type: "session-resumed", sessionId: id });
       for (const client of session.clients) {
-        if (client !== socket) send(client, { type: "sender-reconnected" });
+        if (client !== socket && client.role === "viewer") {
+          send(client, { type: "sender-reconnected" });
+          send(socket, { type: "viewer-joined" });
+        }
       }
       return;
     }
