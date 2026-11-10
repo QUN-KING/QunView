@@ -33,6 +33,7 @@ class WebRtcScreenStreamer(
     private val projectionPermission: Intent,
     private val onSessionReady: (String) -> Unit,
     private val onError: (String) -> Unit,
+    private val onViewerRequest: () -> Unit,
     private val onStopped: () -> Unit
 ) {
     companion object {
@@ -43,6 +44,7 @@ class WebRtcScreenStreamer(
 
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
     @Volatile private var stopped = false
+    @Volatile private var viewerApproved = false
     private var socket: WebSocket? = null
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
@@ -157,14 +159,26 @@ class WebRtcScreenStreamer(
                         val bytes = ByteArray(buffer.data.remaining())
                         buffer.data.get(bytes)
                         val command = JSONObject(String(bytes, Charsets.UTF_8))
-                        QunViewAccessibilityService.instance?.performRemoteCommand(command)
+                        if (viewerApproved) QunViewAccessibilityService.instance?.performRemoteCommand(command)
                     } catch (error: Exception) { Log.w(TAG, "Rejected control message", error) }
                 }
             }
         })
     }
 
+    @Synchronized fun approveViewer() {
+        if (stopped || viewerApproved) return
+        viewerApproved = true
+        sendSignal(JSONObject().put("type", "approve-viewer"))
+    }
+
+    @Synchronized fun denyViewer() {
+        if (stopped || viewerApproved) return
+        sendSignal(JSONObject().put("type", "deny-viewer"))
+    }
+
     private fun createOffer() {
+        if (!viewerApproved) return
         createPeer()
         peer?.createOffer(object : SdpObserver {
             override fun onCreateSuccess(description: SessionDescription) {
@@ -196,9 +210,27 @@ class WebRtcScreenStreamer(
                     retryPending = false
                     onSessionReady("$VIEWER_BASE_URL/?session=$sessionId&key=$viewerToken&signal=$SIGNALING_URL")
                 }
-                "session-resumed" -> { retryDelay = 2L; retryPending = false }
-                "viewer-joined" -> createOffer()
-                "viewer-left" -> { stopPeerOnly(); pendingRemoteIce.clear() }
+                "session-resumed" -> { retryDelay = 2L; retryPending = false; viewerApproved = false }
+                "viewer-join-request" -> {
+                    viewerApproved = false
+                    stopPeerOnly()
+                    pendingRemoteIce.clear()
+                    onViewerRequest()
+                }
+                "viewer-approved" -> {
+                    viewerApproved = true
+                    createOffer()
+                }
+                "viewer-denied-by-sender" -> {
+                    viewerApproved = false
+                    stopPeerOnly()
+                    pendingRemoteIce.clear()
+                }
+                "viewer-left" -> {
+                    viewerApproved = false
+                    stopPeerOnly()
+                    pendingRemoteIce.clear()
+                }
                 "answer" -> {
                     val data = message.getJSONObject("data")
                     val description = SessionDescription(SessionDescription.Type.fromCanonicalForm(data.getString("type")), data.getString("sdp"))
@@ -233,6 +265,7 @@ class WebRtcScreenStreamer(
     @Synchronized fun stop() {
         if (stopped) return
         stopped = true
+        viewerApproved = false
         socket?.send(JSONObject().put("type", "end-session").toString())
         socket?.close(1000, "Sender stopped")
         socket = null
