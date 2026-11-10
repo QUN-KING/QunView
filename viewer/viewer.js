@@ -4,7 +4,7 @@ const placeholder=document.getElementById("placeholder");
 const statusText=document.getElementById("status");
 const screenArea=document.getElementById("screenArea");
 const backBtn=document.getElementById("backBtn"),homeBtn=document.getElementById("homeBtn"),helpBtn=document.getElementById("helpBtn");
-const params=new URLSearchParams(location.search),sessionId=params.get("session"),signalingUrl=params.get("signal");
+const params=new URLSearchParams(location.search),sessionId=params.get("session"),viewerToken=params.get("key"),signalingUrl=params.get("signal");
 let socket,peer,controlChannel,pendingIceCandidates=[],viewerClosing=false,reconnectTimer=null,reconnectDelaySeconds=2,connectionAttempt=0,controlEnabled=false,touchStart=null;
 function setStatus(s){statusText.textContent=s}
 function showWaiting(s){video.srcObject=null;video.classList.remove("active");placeholder.hidden=false;setStatus(s);setControls(false)}
@@ -21,10 +21,10 @@ function createPeer(){
 async function handleOffer(data){if(!peer||["failed","closed"].includes(peer.connectionState))createPeer();await peer.setRemoteDescription(data);const answer=await peer.createAnswer();await peer.setLocalDescription(answer);if(socket&&socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:"answer",data:peer.localDescription}));setStatus("Negotiating secure connection…");for(const c of pendingIceCandidates){try{await peer.addIceCandidate(c)}catch(e){console.warn(e)}}pendingIceCandidates=[]}
 function scheduleViewerReconnect(){if(viewerClosing||reconnectTimer)return;if(peer){peer.close();peer=null}showWaiting("Connection lost. Reconnecting…");reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectViewer()},reconnectDelaySeconds*1000);reconnectDelaySeconds=Math.min(reconnectDelaySeconds*2,30)}
 async function connectViewer(){
- if(!sessionId||!/^[a-f0-9]{32}$/i.test(sessionId)){showWaiting("A valid session link is required.");return}
+ if(!sessionId||!/^[a-f0-9]{32}$/i.test(sessionId)||!viewerToken||!/^[a-f0-9]{64}$/i.test(viewerToken)){showWaiting("A valid private QunView link is required.");return}
  const expected="wss://qunview-signaling.onrender.com";if(signalingUrl!==expected){showWaiting("This QunView link is not valid.");return}
  setStatus("Connecting to QunView…");createPeer();const attempt=++connectionAttempt;const ws=new WebSocket(signalingUrl);socket=ws;
- ws.onopen=()=>{if(attempt!==connectionAttempt)return;reconnectDelaySeconds=2;ws.send(JSON.stringify({type:"join-session",sessionId}));setStatus("Joined session — waiting for sender…")};
+ ws.onopen=()=>{if(attempt!==connectionAttempt)return;reconnectDelaySeconds=2;ws.send(JSON.stringify({type:"join-session",sessionId,viewerToken}));setStatus("Joined session — waiting for sender…")};
  ws.onmessage=async e=>{let m;try{m=JSON.parse(e.data)}catch{return}try{if(m.type==="offer"&&m.data)await handleOffer(m.data);else if(m.type==="ice-candidate"&&m.data){if(!peer||!peer.remoteDescription)pendingIceCandidates.push(m.data);else await peer.addIceCandidate(m.data)}else if(m.type==="sender-reconnected"){createPeer();showWaiting("Sender reconnected…")}else if(m.type==="error")setStatus(m.message||"Unable to join session.");else if(m.type==="viewer-left")showWaiting("Sender ended the session.")}catch(err){console.error(err);showWaiting("Connection negotiation failed.")}};
  ws.onerror=()=>setStatus("Signaling error. Reconnecting…");ws.onclose=()=>{if(!viewerClosing&&attempt===connectionAttempt)scheduleViewerReconnect()};
 }
