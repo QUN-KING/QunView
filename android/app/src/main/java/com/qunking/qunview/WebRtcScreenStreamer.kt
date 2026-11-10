@@ -24,6 +24,8 @@ import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.Executors
 
 /**
  * Sender-side WebRTC pipeline.
@@ -68,20 +70,23 @@ class WebRtcScreenStreamer(
         connectSignaling()
     }
 
-    @Synchronized private fun connectSignaling() {
+    @Synchronized
+    private fun connectSignaling() {
         if (stopped || socket != null) return
         val request = Request.Builder().url(SIGNALING_URL).build()
-        val ws = client.newWebSocket(request, object : WebSocketListener() {
+        val newSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (stopped) { webSocket.close(1000, "Sender stopped"); return }
                 val id = sessionId
                 val token = resumeToken
-                val msg = if (id != null && token != null) JSONObject().put("type", "resume-session").put("sessionId", id).put("resumeToken", token) else JSONObject().put("type", "create-session")
-                webSocket.send(msg.toString())
+                val payload = if (id != null && token != null) {
+                    JSONObject().put("type", "resume-session").put("sessionId", id).put("resumeToken", token)
+                } else { JSONObject().put("type", "create-session") }
+                webSocket.send(payload.toString())
             }
             override fun onMessage(webSocket: WebSocket, text: String) { if (!stopped) handleSignal(text) }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.w(TAG, "Signaling interrupted; retrying", t)
+                Log.w(TAG, "Signaling connection interrupted; retrying", t)
                 synchronized(this@WebRtcScreenStreamer) { if (socket === webSocket) socket = null }
                 scheduleReconnect()
             }
@@ -90,22 +95,20 @@ class WebRtcScreenStreamer(
                 if (!stopped) scheduleReconnect()
             }
         })
-        socket = ws
+        socket = newSocket
     }
 
-    @Synchronized private fun scheduleReconnect() {
-        if (stopped || retryPending) return
-        retryPending = true
+    @Synchronized
+    private fun scheduleReconnect() {
+        if (stopped || reconnectTask?.isDone == false) return
         stopPeerOnly()
         pendingRemoteIce.clear()
-        retryExecutor.schedule({
-            synchronized(this@WebRtcScreenStreamer) {
-                retryPending = false
-                if (!stopped) connectSignaling()
-            }
-        }, retryDelay, TimeUnit.SECONDS)
-        retryDelay = (retryDelay * 2).coerceAtMost(30L)
+        reconnectTask = reconnectExecutor.schedule({
+            synchronized(this@WebRtcScreenStreamer) { reconnectTask = null; if (!stopped) connectSignaling() }
+        }, reconnectDelaySeconds, TimeUnit.SECONDS)
+        reconnectDelaySeconds = (reconnectDelaySeconds * 2).coerceAtMost(30L)
     }
+
     private fun initializeWebRtc() {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context)
@@ -195,6 +198,7 @@ class WebRtcScreenStreamer(
                     onSessionReady(link)
                 }
                 "session-resumed" -> { retryDelay = 2L }
+                "session-resumed" -> { reconnectDelaySeconds = 2L }
                 "viewer-joined" -> createOffer()
                 "viewer-left" -> {
                     stopPeerOnly()
