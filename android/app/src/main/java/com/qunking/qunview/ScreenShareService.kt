@@ -13,20 +13,30 @@ import android.util.Log
 
 class ScreenShareService : Service() {
     private var streamer: WebRtcScreenStreamer? = null
+    @Volatile private var viewerRequestPending = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP_SHARING -> { streamer?.stop(); streamer = null; stopSelf(); return START_NOT_STICKY }
-            ACTION_APPROVE_VIEWER -> { streamer?.approveViewer(); return START_NOT_STICKY }
-            ACTION_DENY_VIEWER -> { streamer?.denyViewer(); return START_NOT_STICKY }
+            ACTION_STOP_SHARING -> { clearViewerRequest(); streamer?.stop(); streamer = null; stopSelf(); return START_NOT_STICKY }
+            ACTION_APPROVE_VIEWER -> {
+                if (viewerRequestPending) {
+                    clearViewerRequest()
+                    streamer?.approveViewer()
+                }
+                return START_NOT_STICKY
+            }
+            ACTION_DENY_VIEWER -> {
+                if (viewerRequestPending) {
+                    clearViewerRequest()
+                    streamer?.denyViewer()
+                }
+                return START_NOT_STICKY
+            }
         }
-        createNotificationChannel()
+        createNotificationChannels()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                buildNotification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
+            startForeground(NOTIFICATION_ID, buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         } else {
             startForeground(NOTIFICATION_ID, buildNotification())
         }
@@ -44,26 +54,23 @@ class ScreenShareService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // Ignore duplicate start commands while this capture session is alive.
         if (streamer != null) return START_NOT_STICKY
 
-        // The service is foreground before ScreenCapturerAndroid creates MediaProjection.
-        // Do not call getMediaProjection() here: Android grants each consent token once.
         streamer = WebRtcScreenStreamer(
             applicationContext,
             resultData,
             onSessionReady = { viewerLink ->
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                    .putString(PENDING_VIEWER_LINK, viewerLink)
-                    .apply()
+                    .putString(PENDING_VIEWER_LINK, viewerLink).apply()
                 sendBroadcast(Intent(ACTION_SESSION_READY).setPackage(packageName)
                     .putExtra(EXTRA_VIEWER_LINK, viewerLink))
             },
             onError = { message ->
-                // Temporary signaling/WebRTC errors must not stop screen sharing.
                 Log.w(TAG, "Temporary connection issue: " + message)
             },
-            onViewerRequest = { sendBroadcast(Intent(ACTION_VIEWER_REQUEST).setPackage(packageName)) },
-            onStopped = { stopSelf() }
+            onViewerRequest = { showViewerRequestNotification() },
+            onStopped = { clearViewerRequest(); stopSelf() }
         )
         try {
             streamer?.start()
@@ -75,11 +82,47 @@ class ScreenShareService : Service() {
         return START_NOT_STICKY
     }
 
+    private fun showViewerRequestNotification() {
+        if (viewerRequestPending) return
+        viewerRequestPending = true
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(VIEWER_REQUEST_NOTIFICATION_ID, buildViewerRequestNotification())
+    }
+
+    private fun clearViewerRequest() {
+        viewerRequestPending = false
+        getSystemService(NotificationManager::class.java)
+            .cancel(VIEWER_REQUEST_NOTIFICATION_ID)
+    }
+
+    private fun buildViewerRequestNotification(): Notification {
+        val approveIntent = Intent(this, ScreenShareService::class.java).setAction(ACTION_APPROVE_VIEWER)
+        val denyIntent = Intent(this, ScreenShareService::class.java).setAction(ACTION_DENY_VIEWER)
+        val approvePending = PendingIntent.getService(this, 43, approveIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val denyPending = PendingIntent.getService(this, 44, denyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            Notification.Builder(this, REQUEST_CHANNEL_ID) else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(this)
+            }
+        return builder.setContentTitle("QunView: Viewer request")
+            .setContentText("Someone wants to view your screen. Choose Allow or Deny.")
+            .setSmallIcon(android.R.drawable.ic_menu_view)
+            .setAutoCancel(true)
+            .setCategory(Notification.CATEGORY_CALL)
+            .addAction(android.R.drawable.checkbox_on_background, "Allow", approvePending)
+            .addAction(android.R.drawable.ic_delete, "Deny", denyPending)
+            .build()
+    }
+
     private fun notifyError(message: String) {
         sendBroadcast(Intent(ACTION_ERROR).setPackage(packageName).putExtra(EXTRA_ERROR, message))
     }
 
     override fun onDestroy() {
+        clearViewerRequest()
         streamer?.stop()
         streamer = null
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -88,22 +131,25 @@ class ScreenShareService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun createNotificationChannel() {
+    private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID, "QunView screen sharing", NotificationManager.IMPORTANCE_LOW
-            )
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(NotificationChannel(
+                CHANNEL_ID, "QunView screen sharing", NotificationManager.IMPORTANCE_LOW))
+            manager.createNotificationChannel(NotificationChannel(
+                REQUEST_CHANNEL_ID, "QunView viewer requests", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Alerts when someone asks to view your screen"
+                setShowBadge(false)
+            })
         }
     }
 
     private fun buildNotification(): Notification {
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            Notification.Builder(this, CHANNEL_ID) else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(this)
+            }
         val stopIntent = Intent(this, ScreenShareService::class.java).setAction(ACTION_STOP_SHARING)
         val stopPendingIntent = PendingIntent.getService(this, 42, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -130,6 +176,8 @@ class ScreenShareService : Service() {
         const val PENDING_VIEWER_LINK = "pending_viewer_link"
         private const val TAG = "QunViewService"
         private const val CHANNEL_ID = "qunview_screen_share"
+        private const val REQUEST_CHANNEL_ID = "qunview_viewer_requests"
         private const val NOTIFICATION_ID = 41
+        private const val VIEWER_REQUEST_NOTIFICATION_ID = 42
     }
 }
