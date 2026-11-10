@@ -3,7 +3,6 @@ package com.qunking.qunview
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
-import android.os.Build
 import android.view.accessibility.AccessibilityEvent
 import org.json.JSONObject
 
@@ -16,7 +15,6 @@ class QunViewAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {}
 
     fun performRemoteCommand(command: JSONObject) {
-        if (!isEnabled) return
         when (command.optString("action")) {
             "back" -> performGlobalAction(GLOBAL_ACTION_BACK)
             "home" -> performGlobalAction(GLOBAL_ACTION_HOME)
