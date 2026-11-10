@@ -3,6 +3,7 @@ package com.qunking.qunview
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -14,6 +15,12 @@ class ScreenShareService : Service() {
     private var streamer: WebRtcScreenStreamer? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP_SHARING) {
+            streamer?.stop()
+            streamer = null
+            stopSelf()
+            return START_NOT_STICKY
+        }
         createNotificationChannel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -97,14 +104,19 @@ class ScreenShareService : Service() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
+        val stopIntent = Intent(this, ScreenShareService::class.java).setAction(ACTION_STOP_SHARING)
+        val stopPendingIntent = PendingIntent.getService(this, 42, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return builder.setContentTitle("QunView screen sharing")
-            .setContentText("Screen sharing is active with your permission.")
+            .setContentText("Your screen is being shared. Tap Stop to end it immediately.")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setOngoing(true)
+            .addAction(android.R.drawable.ic_media_pause, "Stop sharing", stopPendingIntent)
             .build()
     }
 
     companion object {
+        const val ACTION_STOP_SHARING = "com.qunking.qunview.STOP_SHARING"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         const val ACTION_SESSION_READY = "com.qunking.qunview.SESSION_READY"
