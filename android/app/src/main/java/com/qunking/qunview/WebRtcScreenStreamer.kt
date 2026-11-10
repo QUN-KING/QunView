@@ -54,6 +54,7 @@ class WebRtcScreenStreamer(
     private var textureHelper: SurfaceTextureHelper? = null
     private var sessionId: String? = null
     private var resumeToken: String? = null
+    private var viewerToken: String? = null
     private var retryDelay = 2L
     private var retryPending = false
     private val retryExecutor = Executors.newSingleThreadScheduledExecutor()
@@ -190,9 +191,10 @@ class WebRtcScreenStreamer(
                 "session-created" -> {
                     sessionId = message.getString("sessionId")
                     resumeToken = message.getString("resumeToken")
+                    viewerToken = message.getString("viewerToken")
                     retryDelay = 2L
                     retryPending = false
-                    onSessionReady("$VIEWER_BASE_URL/?session=$sessionId&signal=$SIGNALING_URL")
+                    onSessionReady("$VIEWER_BASE_URL/?session=$sessionId&key=$viewerToken&signal=$SIGNALING_URL")
                 }
                 "session-resumed" -> { retryDelay = 2L; retryPending = false }
                 "viewer-joined" -> createOffer()
@@ -215,7 +217,7 @@ class WebRtcScreenStreamer(
                 "error" -> {
                     val msg = message.optString("message", "Signaling error.")
                     if (msg == "Session cannot be resumed" && socket != null) {
-                        sessionId = null; resumeToken = null; stopPeerOnly(); pendingRemoteIce.clear()
+                        sessionId = null; resumeToken = null; viewerToken = null; stopPeerOnly(); pendingRemoteIce.clear()
                         socket?.send(JSONObject().put("type", "create-session").toString())
                     } else onError(msg)
                 }
