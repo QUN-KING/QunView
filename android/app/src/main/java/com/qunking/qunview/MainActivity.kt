@@ -6,7 +6,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.Uri
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -22,11 +21,7 @@ class MainActivity : ComponentActivity() {
             when (intent.action) {
                 ScreenShareService.ACTION_SESSION_READY -> {
                     val link = intent.getStringExtra(ScreenShareService.EXTRA_VIEWER_LINK) ?: return
-                    val share = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, "View my QunView screen (with my permission): $link")
-                    }
-                    startActivity(Intent.createChooser(share, "Share QunView link"))
+                    shareViewerLink(link)
                 }
                 ScreenShareService.ACTION_ERROR -> {
                     val message = intent.getStringExtra(ScreenShareService.EXTRA_ERROR) ?: "Screen sharing could not start."
@@ -38,6 +33,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun shareViewerLink(link: String) {
+        getSharedPreferences(ScreenShareService.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().remove(ScreenShareService.PENDING_VIEWER_LINK).apply()
+        val share = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "View my QunView screen (with my permission): $link")
+        }
+        startActivity(Intent.createChooser(share, "Share QunView link"))
     }
 
     private val capturePermission = registerForActivityResult(
@@ -78,7 +83,15 @@ class MainActivity : ComponentActivity() {
             registerReceiver(serviceEvents, filter)
         }
         receiverRegistered = true
-        window.decorView.post { requestScreenPermission() }
+        window.decorView.post {
+            val pendingLink = getSharedPreferences(ScreenShareService.PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(ScreenShareService.PENDING_VIEWER_LINK, null)
+            if (pendingLink != null) {
+                shareViewerLink(pendingLink)
+            } else {
+                requestScreenPermission()
+            }
+        }
     }
 
     private fun requestScreenPermission() {
@@ -89,15 +102,10 @@ class MainActivity : ComponentActivity() {
     private fun showRequiredChoice() {
         AlertDialog.Builder(this)
             .setTitle("Permission required")
-            .setMessage("Choose one: give screen-sharing permission to use QunView, or uninstall QunView.")
-            .setCancelable(false)
+            .setMessage("Screen sharing needs your permission. You can allow it now, or choose Not now and leave the app.")
+            .setCancelable(true)
             .setPositiveButton("Give Permission") { _, _ -> requestScreenPermission() }
-            .setNegativeButton("Uninstall App") { _, _ ->
-                val uninstall = Intent(Intent.ACTION_DELETE).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-                startActivity(uninstall)
-            }
+            .setNegativeButton("Not now") { _, _ -> finish() }
             .show()
     }
 
