@@ -52,12 +52,13 @@ wss.on("connection", (socket, request) => {
       if (socket.sessionId) return send(socket, { type: "error", message: "This connection already has a session" });
       const id = randomBytes(16).toString("hex");
       const resumeToken = randomBytes(32).toString("hex");
-      const session = { clients: new Set([socket]), createdAt: Date.now(), sender: socket, resumeToken };
+      const viewerToken = randomBytes(32).toString("hex");
+      const session = { clients: new Set([socket]), createdAt: Date.now(), sender: socket, resumeToken, viewerToken };
       sessions.set(id, session);
       socket.sessionId = id;
       socket.role = "sender";
       session.timer = setTimeout(() => cleanSession(id), SESSION_TTL_MS);
-      return send(socket, { type: "session-created", sessionId: id, resumeToken, expiresInSeconds: SESSION_TTL_MS / 1000 });
+      return send(socket, { type: "session-created", sessionId: id, resumeToken, viewerToken, expiresInSeconds: SESSION_TTL_MS / 1000 });
     }
 
     if (msg.type === "resume-session") {
@@ -87,9 +88,10 @@ wss.on("connection", (socket, request) => {
     if (msg.type === "join-session") {
       if (socket.sessionId) return send(socket, { type: "error", message: "This connection already joined a session" });
       const id = typeof msg.sessionId === "string" ? msg.sessionId : "";
+      const token = typeof msg.viewerToken === "string" ? msg.viewerToken : "";
       const session = sessions.get(id);
-      if (!session || Date.now() - session.createdAt > SESSION_TTL_MS) {
-        return send(socket, { type: "error", message: "Session not found or expired" });
+      if (!session || session.viewerToken !== token || Date.now() - session.createdAt > SESSION_TTL_MS) {
+        return send(socket, { type: "error", message: "Session not found or viewer link is invalid" });
       }
       if (session.clients.size >= MAX_CLIENTS_PER_SESSION) {
         return send(socket, { type: "error", message: "Session already has a viewer" });
