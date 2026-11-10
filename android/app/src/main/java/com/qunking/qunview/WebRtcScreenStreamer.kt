@@ -174,6 +174,10 @@ class WebRtcScreenStreamer(
                     onSessionReady(link)
                 }
                 "viewer-joined" -> createOffer()
+                "viewer-left" -> {
+                    stopPeerOnly()
+                    pendingRemoteIce.clear()
+                }
                 "answer" -> {
                     val data = message.getJSONObject("data")
                     val description = SessionDescription(
