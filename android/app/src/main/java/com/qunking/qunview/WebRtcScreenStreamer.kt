@@ -24,8 +24,6 @@ import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.Executors
 
 /**
  * Sender-side WebRTC pipeline.
@@ -100,13 +98,17 @@ class WebRtcScreenStreamer(
 
     @Synchronized
     private fun scheduleReconnect() {
-        if (stopped || reconnectTask?.isDone == false) return
+        if (stopped || retryPending) return
+        retryPending = true
         stopPeerOnly()
         pendingRemoteIce.clear()
-        reconnectTask = reconnectExecutor.schedule({
-            synchronized(this@WebRtcScreenStreamer) { reconnectTask = null; if (!stopped) connectSignaling() }
-        }, reconnectDelaySeconds, TimeUnit.SECONDS)
-        reconnectDelaySeconds = (reconnectDelaySeconds * 2).coerceAtMost(30L)
+        retryExecutor.schedule({
+            synchronized(this@WebRtcScreenStreamer) {
+                retryPending = false
+                if (!stopped) connectSignaling()
+            }
+        }, retryDelay, TimeUnit.SECONDS)
+        retryDelay = (retryDelay * 2).coerceAtMost(30L)
     }
 
     private fun initializeWebRtc() {
@@ -194,11 +196,11 @@ class WebRtcScreenStreamer(
                     sessionId = message.getString("sessionId")
                     resumeToken = message.getString("resumeToken")
                     retryDelay = 2L
+                    retryPending = false
                     val link = "$VIEWER_BASE_URL/?session=$sessionId&signal=$SIGNALING_URL"
                     onSessionReady(link)
                 }
-                "session-resumed" -> { retryDelay = 2L }
-                "session-resumed" -> { reconnectDelaySeconds = 2L }
+                "session-resumed" -> { retryDelay = 2L; retryPending = false }
                 "viewer-joined" -> createOffer()
                 "viewer-left" -> {
                     stopPeerOnly()
