@@ -34,6 +34,7 @@ class WebRtcScreenStreamer(
     private val onSessionReady: (String) -> Unit,
     private val onError: (String) -> Unit,
     private val onViewerRequest: () -> Unit,
+    private val onViewerLeft: () -> Unit,
     private val onStopped: () -> Unit
 ) {
     companion object {
@@ -230,6 +231,7 @@ class WebRtcScreenStreamer(
                     viewerApproved = false
                     stopPeerOnly()
                     pendingRemoteIce.clear()
+                    onViewerLeft()
                 }
                 "answer" -> {
                     val data = message.getJSONObject("data")
