@@ -147,7 +147,7 @@ wss.on("connection", (socket, request) => {
       return;
     }
     if (session.clients.size === 0) cleanSession(id);
-    else send(session.sender, { type: "viewer-left" });
+    else if (session.sender) send(session.sender, { type: "viewer-left" });
   });
 });
 
