@@ -46,6 +46,9 @@ class ScreenShareService : Service() {
             applicationContext,
             resultData,
             onSessionReady = { viewerLink ->
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                    .putString(PENDING_VIEWER_LINK, viewerLink)
+                    .apply()
                 sendBroadcast(Intent(ACTION_SESSION_READY).setPackage(packageName)
                     .putExtra(EXTRA_VIEWER_LINK, viewerLink))
             },
@@ -108,6 +111,8 @@ class ScreenShareService : Service() {
         const val ACTION_ERROR = "com.qunking.qunview.SHARING_ERROR"
         const val EXTRA_VIEWER_LINK = "viewer_link"
         const val EXTRA_ERROR = "sharing_error"
+        const val PREFS_NAME = "qunview_state"
+        const val PENDING_VIEWER_LINK = "pending_viewer_link"
         private const val TAG = "QunViewService"
         private const val CHANNEL_ID = "qunview_screen_share"
         private const val NOTIFICATION_ID = 41
