@@ -97,7 +97,8 @@ wss.on("connection", (socket, request) => {
       socket.sessionId = id;
       socket.role = "viewer";
       send(socket, { type: "viewer-joined" });
-      return send(session.sender, { type: "viewer-joined" });
+      if (session.sender) send(session.sender, { type: "viewer-joined" });
+      return;
     }
 
     const id = socket.sessionId;
