@@ -70,6 +70,7 @@ class ScreenShareService : Service() {
                 Log.w(TAG, "Temporary connection issue: " + message)
             },
             onViewerRequest = { showViewerRequestNotification() },
+            onViewerLeft = { clearViewerRequest() },
             onStopped = { clearViewerRequest(); stopSelf() }
         )
         try {
@@ -110,7 +111,7 @@ class ScreenShareService : Service() {
         return builder.setContentTitle("QunView: Viewer request")
             .setContentText("Someone wants to view your screen. Choose Allow or Deny.")
             .setSmallIcon(android.R.drawable.ic_menu_view)
-            .setAutoCancel(true)
+            .setOngoing(true)
             .setCategory(Notification.CATEGORY_CALL)
             .addAction(android.R.drawable.checkbox_on_background, "Allow", approvePending)
             .addAction(android.R.drawable.ic_delete, "Deny", denyPending)
