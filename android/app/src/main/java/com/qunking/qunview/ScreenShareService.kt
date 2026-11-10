@@ -50,9 +50,8 @@ class ScreenShareService : Service() {
                     .putExtra(EXTRA_VIEWER_LINK, viewerLink))
             },
             onError = { message ->
-                Log.e(TAG, message)
-                notifyError(message)
-                stopSelf()
+                // Temporary signaling/WebRTC errors must not stop screen sharing.
+                Log.w(TAG, "Temporary connection issue: " + message)
             },
             onStopped = { stopSelf() }
         )
