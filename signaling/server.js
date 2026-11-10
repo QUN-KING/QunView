@@ -44,9 +44,18 @@ wss.on("connection", (socket, request) => {
     return;
   }
 
+  socket.messageWindowStartedAt = Date.now();
+  socket.messageCount = 0;
   socket.on("message", (raw) => {
+    const now = Date.now();
+    if (now - socket.messageWindowStartedAt >= 10000) { socket.messageWindowStartedAt = now; socket.messageCount = 0; }
+    socket.messageCount += 1;
+    if (socket.messageCount > 80) { socket.close(1008, "Rate limit exceeded"); return; }
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return send(socket, { type: "error", message: "Invalid JSON" }); }
+    if (!msg || typeof msg !== "object" || Array.isArray(msg) || typeof msg.type !== "string") {
+      return send(socket, { type: "error", message: "Invalid message format" });
+    }
 
     if (msg.type === "create-session") {
       if (socket.sessionId) return send(socket, { type: "error", message: "This connection already has a session" });
