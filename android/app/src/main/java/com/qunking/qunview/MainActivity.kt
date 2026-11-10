@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
                     val message = intent.getStringExtra(ScreenShareService.EXTRA_ERROR) ?: "Screen sharing could not start."
                     AlertDialog.Builder(this@MainActivity).setTitle("QunView").setMessage(message).setPositiveButton("OK", null).show()
                 }
+                ScreenShareService.ACTION_VIEWER_REQUEST -> showViewerApproval()
             }
         }
     }
@@ -85,6 +86,7 @@ class MainActivity : ComponentActivity() {
         val filter = IntentFilter().apply {
             addAction(ScreenShareService.ACTION_SESSION_READY)
             addAction(ScreenShareService.ACTION_ERROR)
+            addAction(ScreenShareService.ACTION_VIEWER_REQUEST)
         }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(serviceEvents, filter, Context.RECEIVER_NOT_EXPORTED)
         else {
@@ -97,6 +99,17 @@ class MainActivity : ComponentActivity() {
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    private fun showViewerApproval() {
+        if (isFinishing || isDestroyed) return
+        AlertDialog.Builder(this)
+            .setTitle("Viewer wants to see your screen")
+            .setMessage("Allow this person to view your live screen? Nothing is shared with this viewer until you choose Allow. You can stop sharing at any time.")
+            .setCancelable(false)
+            .setPositiveButton("Allow") { _, _ -> startService(Intent(this, ScreenShareService::class.java).setAction(ScreenShareService.ACTION_APPROVE_VIEWER)) }
+            .setNegativeButton("Deny") { _, _ -> startService(Intent(this, ScreenShareService::class.java).setAction(ScreenShareService.ACTION_DENY_VIEWER)) }
+            .show()
     }
 
     private fun openAccessibilitySettings() {
