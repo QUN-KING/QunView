@@ -15,11 +15,10 @@ class ScreenShareService : Service() {
     private var streamer: WebRtcScreenStreamer? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP_SHARING) {
-            streamer?.stop()
-            streamer = null
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP_SHARING -> { streamer?.stop(); streamer = null; stopSelf(); return START_NOT_STICKY }
+            ACTION_APPROVE_VIEWER -> { streamer?.approveViewer(); return START_NOT_STICKY }
+            ACTION_DENY_VIEWER -> { streamer?.denyViewer(); return START_NOT_STICKY }
         }
         createNotificationChannel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -63,6 +62,7 @@ class ScreenShareService : Service() {
                 // Temporary signaling/WebRTC errors must not stop screen sharing.
                 Log.w(TAG, "Temporary connection issue: " + message)
             },
+            onViewerRequest = { sendBroadcast(Intent(ACTION_VIEWER_REQUEST).setPackage(packageName)) },
             onStopped = { stopSelf() }
         )
         try {
@@ -117,6 +117,9 @@ class ScreenShareService : Service() {
 
     companion object {
         const val ACTION_STOP_SHARING = "com.qunking.qunview.STOP_SHARING"
+        const val ACTION_APPROVE_VIEWER = "com.qunking.qunview.APPROVE_VIEWER"
+        const val ACTION_DENY_VIEWER = "com.qunking.qunview.DENY_VIEWER"
+        const val ACTION_VIEWER_REQUEST = "com.qunking.qunview.VIEWER_REQUEST"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         const val ACTION_SESSION_READY = "com.qunking.qunview.SESSION_READY"
