@@ -21,8 +21,8 @@ class QunViewAccessibilityService : AccessibilityService() {
             "tap", "swipe" -> {
                 val x1 = normalized(command.optDouble("x1", command.optDouble("x", -1.0)))
                 val y1 = normalized(command.optDouble("y1", command.optDouble("y", -1.0)))
-                val x2 = normalized(command.optDouble("x2", x1))
-                val y2 = normalized(command.optDouble("y2", y1))
+                val x2 = normalized(command.optDouble("x2", x1.toDouble()))
+                val y2 = normalized(command.optDouble("y2", y1.toDouble()))
                 if (x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0) return
                 val metrics = resources.displayMetrics
                 val path = Path().apply {
