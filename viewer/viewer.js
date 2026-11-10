@@ -10,6 +10,9 @@ let socket;
 let peer;
 let pendingIceCandidates = [];
 let viewerClosing = false;
+let reconnectTimer = null;
+let reconnectDelaySeconds = 2;
+let connectionAttempt = 0;
 
 function setStatus(message) { statusText.textContent = message; }
 function showWaiting(message) { video.srcObject = null; video.classList.remove("active"); placeholder.hidden = false; setStatus(message); }
@@ -41,13 +44,33 @@ async function handleOffer(data) {
   pendingIceCandidates = [];
 }
 
+function scheduleViewerReconnect() {
+  if (viewerClosing || reconnectTimer) return;
+  if (peer) { peer.close(); peer = null; }
+  showWaiting("Connection lost. Reconnecting automatically…");
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectViewer();
+  }, reconnectDelaySeconds * 1000);
+  reconnectDelaySeconds = Math.min(reconnectDelaySeconds * 2, 30);
+}
+
 async function connectViewer() {
   if (!sessionId || !/^[a-f0-9]{32}$/i.test(sessionId)) { showWaiting("A valid session link is required."); return; }
   const expectedSignalingUrl = "wss://qunview-signaling.onrender.com";
   if (signalingUrl !== expectedSignalingUrl) { showWaiting("This QunView link is not valid."); return; }
-  setStatus("Connecting to QunView…"); createPeer(); socket = new WebSocket(signalingUrl);
-  socket.onopen = () => { socket.send(JSON.stringify({ type: "join-session", sessionId })); setStatus("Joined session — waiting for sender…"); };
-  socket.onmessage = async (event) => {
+  setStatus("Connecting to QunView…");
+  createPeer();
+  const thisAttempt = ++connectionAttempt;
+  const currentSocket = new WebSocket(signalingUrl);
+  socket = currentSocket;
+  currentSocket.onopen = () => {
+    if (thisAttempt !== connectionAttempt) return;
+    reconnectDelaySeconds = 2;
+    currentSocket.send(JSON.stringify({ type: "join-session", sessionId }));
+    setStatus("Joined session — waiting for sender…");
+  };
+  currentSocket.onmessage = async (event) => {
     let message; try { message = JSON.parse(event.data); } catch { return; }
     try {
       if (message.type === "offer" && message.data) await handleOffer(message.data);
@@ -59,11 +82,15 @@ async function connectViewer() {
       else if (message.type === "viewer-left") showWaiting("Sender ended the session.");
     } catch (error) { console.error("Viewer negotiation failed", error); showWaiting("Connection interrupted. Waiting for automatic retry…"); }
   };
-  socket.onerror = () => setStatus("Signaling connection error.");
-  socket.onclose = () => { if (viewerClosing) return; if (peer) peer.close(); showWaiting("Session disconnected."); };
+  currentSocket.onerror = () => setStatus("Signaling connection error. Reconnecting automatically…");
+  currentSocket.onclose = () => {
+    if (viewerClosing || thisAttempt !== connectionAttempt) return;
+    scheduleViewerReconnect();
+  };
 }
 window.addEventListener("beforeunload", () => {
   viewerClosing = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
   if (socket && socket.readyState === WebSocket.OPEN) socket.close();
   if (peer) peer.close();
 });
