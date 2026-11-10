@@ -50,12 +50,34 @@ wss.on("connection", (socket, request) => {
     if (msg.type === "create-session") {
       if (socket.sessionId) return send(socket, { type: "error", message: "This connection already has a session" });
       const id = randomBytes(16).toString("hex");
-      const session = { clients: new Set([socket]), createdAt: Date.now(), sender: socket };
+      const resumeToken = randomBytes(32).toString("hex");
+      const session = { clients: new Set([socket]), createdAt: Date.now(), sender: socket, resumeToken };
       sessions.set(id, session);
       socket.sessionId = id;
       socket.role = "sender";
       session.timer = setTimeout(() => cleanSession(id), SESSION_TTL_MS);
-      return send(socket, { type: "session-created", sessionId: id, expiresInSeconds: SESSION_TTL_MS / 1000 });
+      return send(socket, { type: "session-created", sessionId: id, resumeToken, expiresInSeconds: SESSION_TTL_MS / 1000 });
+    }
+
+    if (msg.type === "resume-session") {
+      const id = typeof msg.sessionId === "string" ? msg.sessionId : "";
+      const token = typeof msg.resumeToken === "string" ? msg.resumeToken : "";
+      const session = sessions.get(id);
+      if (!session || session.resumeToken !== token || Date.now() - session.createdAt > SESSION_TTL_MS) {
+        return send(socket, { type: "error", message: "Session cannot be resumed" });
+      }
+      if (session.sender && session.sender.readyState === WebSocket.OPEN) {
+        return send(socket, { type: "error", message: "Sender is already connected" });
+      }
+      session.sender = socket;
+      session.clients.add(socket);
+      socket.sessionId = id;
+      socket.role = "sender";
+      send(socket, { type: "session-resumed", sessionId: id });
+      for (const client of session.clients) {
+        if (client !== socket) send(client, { type: "sender-reconnected" });
+      }
+      return;
     }
 
     if (msg.type === "join-session") {
@@ -117,11 +139,12 @@ wss.on("connection", (socket, request) => {
     const session = id && sessions.get(id);
     if (!session) return;
     session.clients.delete(socket);
-    if (socket.role === "sender" || session.clients.size === 0) {
-      cleanSession(id);
-    } else {
-      send(session.sender, { type: "viewer-left" });
+    if (socket.role === "sender") {
+      session.sender = null;
+      return;
     }
+    if (session.clients.size === 0) cleanSession(id);
+    else send(session.sender, { type: "viewer-left" });
   });
 });
 
