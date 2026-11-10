@@ -10,7 +10,8 @@ const MAX_CLIENTS_PER_SESSION = 2;
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
 const server = http.createServer((req, res) => {
-  if (req.url === "/health") {
+  const pathname = new URL(req.url, "http://localhost").pathname;
+  if (pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({ ok: true, service: "qunview-signaling" }));
   }
