@@ -26,7 +26,11 @@ class ScreenShareService : Service() {
                 }
                 return START_NOT_STICKY
             }
-            ACTION_APPROVE_REMOTE_CONTROL -> { if (streamer?.approveRemoteControl() == true) showRemoteControlActiveNotification() else clearRemoteControlRequest(); return START_NOT_STICKY }
+            ACTION_APPROVE_REMOTE_CONTROL -> {
+                clearRemoteControlRequest()
+                if (streamer?.approveRemoteControl() == true) showRemoteControlActiveNotification()
+                return START_NOT_STICKY
+            }
             ACTION_DENY_REMOTE_CONTROL -> { clearRemoteControlRequest(); streamer?.denyRemoteControl(); return START_NOT_STICKY }
             ACTION_DENY_VIEWER -> {
                 if (viewerRequestPending) {
