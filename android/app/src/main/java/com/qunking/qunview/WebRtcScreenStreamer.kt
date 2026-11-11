@@ -34,6 +34,7 @@ class WebRtcScreenStreamer(
     private val onSessionReady: (String) -> Unit,
     private val onError: (String) -> Unit,
     private val onViewerRequest: () -> Unit,
+    private val onRemoteControlRequest: () -> Unit,
     private val onViewerLeft: () -> Unit,
     private val onStopped: () -> Unit
 ) {
@@ -46,6 +47,7 @@ class WebRtcScreenStreamer(
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
     @Volatile private var stopped = false
     @Volatile private var viewerApproved = false
+    @Volatile private var remoteControlApproved = false
     private var socket: WebSocket? = null
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
@@ -160,7 +162,16 @@ class WebRtcScreenStreamer(
                         val bytes = ByteArray(buffer.data.remaining())
                         buffer.data.get(bytes)
                         val command = JSONObject(String(bytes, Charsets.UTF_8))
-                        if (viewerApproved) QunViewAccessibilityService.instance?.performRemoteCommand(command)
+                        when (command.optString("action")) {
+                            "request-control" -> {
+                                if (viewerApproved && QunViewAccessibilityService.instance != null && !remoteControlApproved) onRemoteControlRequest()
+                                else if (!remoteControlApproved) sendControlReply("control-denied")
+                            }
+                            "back", "home", "tap", "swipe" -> {
+                                if (viewerApproved && remoteControlApproved && QunViewAccessibilityService.instance != null)
+                                    QunViewAccessibilityService.instance?.performRemoteCommand(command)
+                            }
+                        }
                     } catch (error: Exception) { Log.w(TAG, "Rejected control message", error) }
                 }
             }
@@ -171,6 +182,25 @@ class WebRtcScreenStreamer(
         if (stopped || viewerApproved) return
         viewerApproved = true
         sendSignal(JSONObject().put("type", "approve-viewer"))
+    }
+
+    @Synchronized fun approveRemoteControl() {
+        if (stopped || !viewerApproved || QunViewAccessibilityService.instance == null) {
+            sendControlReply("control-denied")
+            return
+        }
+        remoteControlApproved = true
+        sendControlReply("control-approved")
+    }
+
+    @Synchronized fun denyRemoteControl() {
+        remoteControlApproved = false
+        sendControlReply("control-denied")
+    }
+
+    private fun sendControlReply(action: String) {
+        val bytes = ByteBuffer.wrap(JSONObject().put("action", action).toString().toByteArray(Charsets.UTF_8))
+        controlChannel?.send(DataChannel.Buffer(bytes, false))
     }
 
     @Synchronized fun denyViewer() {
@@ -211,9 +241,10 @@ class WebRtcScreenStreamer(
                     retryPending = false
                     onSessionReady("$VIEWER_BASE_URL/?session=$sessionId&key=$viewerToken&signal=$SIGNALING_URL")
                 }
-                "session-resumed" -> { retryDelay = 2L; retryPending = false; viewerApproved = false }
+                "session-resumed" -> { retryDelay = 2L; retryPending = false; viewerApproved = false; remoteControlApproved = false }
                 "viewer-join-request" -> {
                     viewerApproved = false
+                    remoteControlApproved = false
                     stopPeerOnly()
                     pendingRemoteIce.clear()
                     onViewerRequest()
@@ -268,6 +299,7 @@ class WebRtcScreenStreamer(
         if (stopped) return
         stopped = true
         viewerApproved = false
+        remoteControlApproved = false
         socket?.send(JSONObject().put("type", "end-session").toString())
         socket?.close(1000, "Sender stopped")
         socket = null
