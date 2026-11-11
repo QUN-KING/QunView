@@ -64,6 +64,7 @@ class WebRtcScreenStreamer(
     private var viewerToken: String? = null
     private var retryDelay = 2L
     private var retryPending = false
+    @Volatile private var peerRecoveryPending = false
     private val retryExecutor = Executors.newSingleThreadScheduledExecutor()
     private val pendingRemoteIce = mutableListOf<IceCandidate>()
 
@@ -113,6 +114,25 @@ class WebRtcScreenStreamer(
         retryDelay = (retryDelay * 2).coerceAtMost(30L)
     }
 
+    private fun schedulePeerRecovery(state: PeerConnection.IceConnectionState) {
+        if (stopped || !viewerApproved || peerRecoveryPending) return
+        peerRecoveryPending = true
+        retryExecutor.schedule({
+            synchronized(this@WebRtcScreenStreamer) {
+                peerRecoveryPending = false
+                if (stopped || !viewerApproved) return@synchronized
+                val current = peer ?: return@synchronized
+                val currentState = current.iceConnectionState()
+                if (currentState != PeerConnection.IceConnectionState.DISCONNECTED &&
+                    currentState != PeerConnection.IceConnectionState.FAILED) return@synchronized
+                Log.w(TAG, "WebRTC ICE $state persisted; rebuilding peer connection")
+                stopPeerOnly()
+                pendingRemoteIce.clear()
+                createOffer()
+            }
+        }, if (state == PeerConnection.IceConnectionState.DISCONNECTED) 5L else 0L, TimeUnit.SECONDS)
+    }
+
     private fun initializeWebRtc() {
         PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context)
             .setEnableInternalTracer(false).createInitializationOptions())
@@ -142,7 +162,15 @@ class WebRtcScreenStreamer(
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }, object : PeerConnection.Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState) {}
-            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {}
+            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+                when (state) {
+                    PeerConnection.IceConnectionState.CONNECTED,
+                    PeerConnection.IceConnectionState.COMPLETED -> peerRecoveryPending = false
+                    PeerConnection.IceConnectionState.DISCONNECTED,
+                    PeerConnection.IceConnectionState.FAILED -> schedulePeerRecovery(state)
+                    else -> {}
+                }
+            }
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
             override fun onIceCandidate(candidate: IceCandidate) {
@@ -351,6 +379,7 @@ class WebRtcScreenStreamer(
     @Synchronized fun stop() {
         if (stopped) return
         stopped = true
+        peerRecoveryPending = false
         viewerApproved = false
         revokeRemoteControlApproval()
         socket?.send(JSONObject().put("type", "end-session").toString())
