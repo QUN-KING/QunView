@@ -14,6 +14,7 @@ import android.util.Log
 class ScreenShareService : Service() {
     private var streamer: WebRtcScreenStreamer? = null
     @Volatile private var viewerRequestPending = false
+    @Volatile private var remoteControlRequestPending = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -25,8 +26,8 @@ class ScreenShareService : Service() {
                 }
                 return START_NOT_STICKY
             }
-            ACTION_APPROVE_REMOTE_CONTROL -> { streamer?.approveRemoteControl(); return START_NOT_STICKY }
-            ACTION_DENY_REMOTE_CONTROL -> { streamer?.denyRemoteControl(); return START_NOT_STICKY }
+            ACTION_APPROVE_REMOTE_CONTROL -> { clearRemoteControlRequest(); streamer?.approveRemoteControl(); return START_NOT_STICKY }
+            ACTION_DENY_REMOTE_CONTROL -> { clearRemoteControlRequest(); streamer?.denyRemoteControl(); return START_NOT_STICKY }
             ACTION_DENY_VIEWER -> {
                 if (viewerRequestPending) {
                     clearViewerRequest()
@@ -95,6 +96,8 @@ class ScreenShareService : Service() {
     }
 
     private fun showRemoteControlRequestNotification() {
+        if (remoteControlRequestPending) return
+        remoteControlRequestPending = true
         val allow = PendingIntent.getService(this, 45, Intent(this, ScreenShareService::class.java).setAction(ACTION_APPROVE_REMOTE_CONTROL), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val deny = PendingIntent.getService(this, 46, Intent(this, ScreenShareService::class.java).setAction(ACTION_DENY_REMOTE_CONTROL), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, REQUEST_CHANNEL_ID) else {
@@ -109,8 +112,13 @@ class ScreenShareService : Service() {
                 .addAction(android.R.drawable.ic_delete, "Deny", deny).build())
     }
 
+    private fun clearRemoteControlRequest() {
+        remoteControlRequestPending = false
+        getSystemService(NotificationManager::class.java).cancel(CONTROL_REQUEST_NOTIFICATION_ID)
+    }
+
     private fun clearViewerRequest() {
-        getSystemService(NotificationManager::class.java).cancel(CONTROL_REQUEST_NOTIFICATION_ID);
+        clearRemoteControlRequest()
         viewerRequestPending = false
         getSystemService(NotificationManager::class.java)
             .cancel(VIEWER_REQUEST_NOTIFICATION_ID)
