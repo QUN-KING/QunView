@@ -48,6 +48,7 @@ class WebRtcScreenStreamer(
     @Volatile private var stopped = false
     @Volatile private var viewerApproved = false
     @Volatile private var remoteControlApproved = false
+    @Volatile private var remoteControlRequestPending = false
     private var socket: WebSocket? = null
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
@@ -164,8 +165,12 @@ class WebRtcScreenStreamer(
                         val command = JSONObject(String(bytes, Charsets.UTF_8))
                         when (command.optString("action")) {
                             "request-control" -> {
-                                if (viewerApproved && QunViewAccessibilityService.instance != null && !remoteControlApproved) onRemoteControlRequest()
-                                else if (!remoteControlApproved) sendControlReply("control-denied")
+                                if (viewerApproved && QunViewAccessibilityService.instance != null && !remoteControlApproved) {
+                                    if (!remoteControlRequestPending) {
+                                        remoteControlRequestPending = true
+                                        onRemoteControlRequest()
+                                    }
+                                } else if (!remoteControlApproved) sendControlReply("control-denied")
                             }
                             "back", "home", "tap", "swipe" -> {
                                 if (viewerApproved && remoteControlApproved && QunViewAccessibilityService.instance != null)
@@ -189,12 +194,14 @@ class WebRtcScreenStreamer(
             sendControlReply("control-denied")
             return
         }
+        remoteControlRequestPending = false
         remoteControlApproved = true
         sendControlReply("control-approved")
     }
 
     @Synchronized fun denyRemoteControl() {
         remoteControlApproved = false
+        remoteControlRequestPending = false
         sendControlReply("control-denied")
     }
 
@@ -245,6 +252,7 @@ class WebRtcScreenStreamer(
                 "viewer-join-request" -> {
                     viewerApproved = false
                     remoteControlApproved = false
+                    remoteControlRequestPending = false
                     stopPeerOnly()
                     pendingRemoteIce.clear()
                     onViewerRequest()
@@ -260,6 +268,8 @@ class WebRtcScreenStreamer(
                 }
                 "viewer-left" -> {
                     viewerApproved = false
+                    remoteControlApproved = false
+                    remoteControlRequestPending = false
                     stopPeerOnly()
                     pendingRemoteIce.clear()
                     onViewerLeft()
@@ -300,6 +310,7 @@ class WebRtcScreenStreamer(
         stopped = true
         viewerApproved = false
         remoteControlApproved = false
+        remoteControlRequestPending = false
         socket?.send(JSONObject().put("type", "end-session").toString())
         socket?.close(1000, "Sender stopped")
         socket = null
