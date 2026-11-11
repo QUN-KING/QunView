@@ -30,7 +30,7 @@ Then build and test the Android app.
 
 ## 4. Important before public use
 
-- Configure a TURN relay for networks where direct WebRTC connectivity fails. Set Render environment variables `TURN_URLS` (comma-separated `turn:`/`turns:` URLs) and `TURN_SHARED_SECRET` (the TURN REST API shared secret configured on your coturn/provider). The signaling service issues session-token-protected, 10-minute HMAC-SHA1 credentials to the sender and viewer. Session tokens are sent in an Authorization header, not in the TURN configuration URL. If these variables are absent, the app safely falls back to STUN only. Do not put the shared secret in the Android app or viewer website.
+- Configure Cloudflare Realtime TURN for networks where direct WebRTC connectivity fails. Create a TURN key in Cloudflare Realtime > TURN Server, then set Render environment variables `CLOUDFLARE_TURN_KEY_ID` (the TURN key ID) and `CLOUDFLARE_TURN_API_TOKEN` (the TURN key API token). Keep both values only in Render; never commit them or put them in the Android app/viewer. The signaling server requests 12-hour temporary ICE credentials from Cloudflare after validating the session token, and returns them to the authenticated sender/viewer. If Cloudflare credentials are absent or the API is temporarily unavailable, QunView safely falls back to STUN only. The previous coturn-compatible `TURN_URLS`/`TURN_SHARED_SECRET` configuration remains available as a fallback for a separately operated coturn/provider server.
 - The signaling service currently uses random private session/viewer/resume tokens, timing-safe token comparison, a viewer-origin allowlist, an 80-message-per-10-second per-socket limit, and a 64 KB WebSocket payload limit. These controls reduce casual misuse but are not a substitute for a full production security review and monitoring.
 - Use only HTTPS/WSS. Do not put long-lived secrets in the Android app or viewer URL.
 - Verify Android MediaProjection consent, foreground notification behavior, stop/revoke handling, and app uninstall behavior on real devices.
@@ -45,7 +45,7 @@ QunView does not record or save screen video. Optional remote assistance (Back, 
 - While a capture session remains active, a viewer can reconnect without restarting screen capture. The sender must approve the viewer connection again.
 - The sender receives a single Allow/Deny notification for a pending viewer request and a separate ongoing Stop sharing notification.
 - Android notification permission, channel settings, Do Not Disturb, and manufacturer battery restrictions can affect notification delivery.
-- TURN support is implemented but remains optional until a TURN provider/server is configured. The current free Render blueprint does not provision a TURN relay; without the two environment variables, connections use STUN only.
+- TURN support is implemented but remains optional until Cloudflare Realtime TURN (or a separately operated coturn server) is configured. The current free Render blueprint does not provision a TURN relay; without provider credentials, connections use STUN only. Cloudflare Realtime TURN includes 1,000 GB/month free egress, then $0.05/GB; monitor Cloudflare usage and billing.
 - Do not distribute as production-ready until two-device testing covers approval, denial, background notifications, stop, reconnect, and optional remote assistance.
 
 
