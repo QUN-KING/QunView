@@ -129,6 +129,7 @@ wss.on("connection", (socket, request) => {
     }
 
     if (msg.type === "join-session") {
+      if (request.headers.origin !== VIEWER_ORIGIN) return send(socket, { type: "error", message: "Viewer origin not allowed" });
       if (socket.sessionId) return send(socket, { type: "error", message: "This connection already joined a session" });
       const id = typeof msg.sessionId === "string" ? msg.sessionId : "";
       const session = sessions.get(id);
