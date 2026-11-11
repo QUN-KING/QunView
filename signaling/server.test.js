@@ -215,3 +215,33 @@ test("an unapproved viewer still needs approval after sender resumes", async () 
   resumedSender.close();
   viewer.close();
 });
+
+test("a socket already joined to one session cannot resume another session", async () => {
+  const senderA = await connect(wsUrl);
+  const createdAPromise = nextMessage(senderA, m => m.type === "session-created");
+  send(senderA, { type: "create-session" });
+  const sessionA = await createdAPromise;
+
+  const senderB = await connect(wsUrl);
+  const createdBPromise = nextMessage(senderB, m => m.type === "session-created");
+  send(senderB, { type: "create-session" });
+  const sessionB = await createdBPromise;
+
+  const viewer = await connect(wsUrl);
+  const waiting = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
+  const request = nextMessage(senderA, m => m.type === "viewer-join-request");
+  send(viewer, { type: "join-session", sessionId: sessionA.sessionId, viewerToken: sessionA.viewerToken });
+  await Promise.all([waiting, request]);
+
+  const rejected = nextMessage(viewer, m => m.type === "error");
+  send(viewer, { type: "resume-session", sessionId: sessionB.sessionId, resumeToken: sessionB.resumeToken });
+  assert.match((await rejected).message, /already belongs to a session/);
+
+  const approved = nextMessage(viewer, m => m.type === "sender-approved-viewer");
+  send(senderA, { type: "approve-viewer" });
+  await approved;
+
+  send(senderA, { type: "end-session" });
+  send(senderB, { type: "end-session" });
+  senderA.close(); senderB.close(); viewer.close();
+});
