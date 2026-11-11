@@ -31,12 +31,12 @@ Then build and test the Android app.
 ## 4. Important before public use
 
 - Configure a TURN relay with credentials for networks where direct WebRTC connectivity fails. The current app only has a public STUN server.
-- Add authentication/session access protection, origin checks, rate limiting, and abuse monitoring before public launch.
+- The signaling service currently uses random private session/viewer/resume tokens, timing-safe token comparison, a viewer-origin allowlist, an 80-message-per-10-second per-socket limit, and a 64 KB WebSocket payload limit. These controls reduce casual misuse but are not a substitute for a full production security review and monitoring.
 - Use only HTTPS/WSS. Do not put long-lived secrets in the Android app or viewer URL.
 - Verify Android MediaProjection consent, foreground notification behavior, stop/revoke handling, and app uninstall behavior on real devices.
 - Do not treat a successful APK build as proof that live screen sharing works. Test on two separate Android phones and different networks.
 
-No screen recording or remote-control feature is part of QunView.
+QunView does not record or save screen video. Optional remote assistance (Back, Home, tap, and swipe) is supported only when the device owner separately enables the QunView Accessibility service in Android settings. Screen viewing does not require enabling remote assistance.
 
 
 ## Consent and operational notes
