@@ -137,8 +137,9 @@ class WebRtcScreenStreamer(
         val id = sessionId ?: return servers
         val token = resumeToken ?: return servers
         try {
-            val url = SIGNALING_HTTP_URL + "/turn-credentials?sessionId=" + id + "&token=" + token
-            val request = Request.Builder().url(url).header("Cache-Control", "no-cache").get().build()
+            val url = SIGNALING_HTTP_URL + "/turn-credentials?sessionId=" + id
+            val request = Request.Builder().url(url).header("Cache-Control", "no-cache")
+                .header("Authorization", "Bearer " + token).get().build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return servers
                 val payload = JSONObject(response.body?.string() ?: return servers)
