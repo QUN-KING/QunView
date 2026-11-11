@@ -64,7 +64,7 @@ Complete this checklist on two physical Android phones before calling a release 
 - [ ] Stop screen sharing from the persistent Android notification and verify the viewer loses the stream.
 - [ ] Repeat with the sender app backgrounded, screen locked/unlocked, and viewer browser closed/reopened.
 - [ ] Test a Wi-Fi-to-mobile-data or other network change and reconnect behavior.
-- [ ] Test on a network where direct peer-to-peer WebRTC is blocked; verify TURN relay works after a real TURN provider is configured.
+- [ ] Test on a network where direct peer-to-peer WebRTC is blocked; verify QunView reports that a direct connection could not be established. The free-only release remains STUN-only and does not add TURN or paid relay services.
 - [ ] Disable the QunView Accessibility service in Android Settings and verify remote commands are revoked.
 
 Do not mark the release ready based on CI or APK creation alone.
