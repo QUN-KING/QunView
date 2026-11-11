@@ -20,6 +20,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 class MainActivity : ComponentActivity() {
     private var receiverRegistered = false
     private var accessibilitySettingsOpened = false
+    private var savedViewerLink: String? = null
+    private var shareLinkButton: Button? = null
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -30,6 +32,8 @@ class MainActivity : ComponentActivity() {
             when (intent.action) {
                 ScreenShareService.ACTION_SESSION_READY -> {
                     val link = intent.getStringExtra(ScreenShareService.EXTRA_VIEWER_LINK) ?: return
+                    savedViewerLink = link
+                    shareLinkButton?.isEnabled = true
                     shareViewerLink(link)
                 }
                 ScreenShareService.ACTION_ERROR -> {
@@ -66,6 +70,18 @@ class MainActivity : ComponentActivity() {
             text = "Start screen sharing"
             setOnClickListener { requestScreenPermission() }
         }
+        shareLinkButton = Button(this).apply {
+            text = "Share viewer link again"
+            isEnabled = false
+            setOnClickListener {
+                val link = savedViewerLink ?: getSharedPreferences(ScreenShareService.PREFS_NAME, MODE_PRIVATE)
+                    .getString(ScreenShareService.PENDING_VIEWER_LINK, null)
+                if (link != null) {
+                    savedViewerLink = link
+                    shareViewerLink(link)
+                }
+            }
+        }
         val accessibilityButton = Button(this).apply {
             text = "Enable optional remote assistance"
             setOnClickListener { openAccessibilitySettings() }
@@ -88,6 +104,7 @@ class MainActivity : ComponentActivity() {
             addView(title)
             addView(shareButton)
             addView(stopButton)
+            addView(shareLinkButton)
             addView(accessibilityButton)
             addView(status)
         })
@@ -104,6 +121,7 @@ class MainActivity : ComponentActivity() {
             registerReceiver(serviceEvents, filter)
         }
         receiverRegistered = true
+        refreshSavedViewerLink()
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -150,6 +168,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshSavedViewerLink()
         if (accessibilitySettingsOpened) {
             accessibilitySettingsOpened = false
             val message = if (isAccessibilityServiceEnabled())
@@ -184,6 +203,15 @@ class MainActivity : ComponentActivity() {
 
     private fun requestUninstall() {
         startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:" + packageName)))
+    }
+
+    private fun refreshSavedViewerLink() {
+        val stored = getSharedPreferences(ScreenShareService.PREFS_NAME, MODE_PRIVATE)
+            .getString(ScreenShareService.PENDING_VIEWER_LINK, null)
+        if (!stored.isNullOrBlank()) {
+            savedViewerLink = stored
+            shareLinkButton?.isEnabled = true
+        }
     }
 
     private fun shareViewerLink(link: String) {
