@@ -4,6 +4,7 @@ const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
+const { createHmac } = require("node:crypto");
 const WebSocket = require("ws");
 
 let serverProcess;
@@ -57,7 +58,7 @@ before(async () => {
   wsUrl = `ws://127.0.0.1:${port}`;
   serverProcess = spawn(process.execPath, ["server.js"], {
     cwd: __dirname,
-    env: { ...process.env, PORT: String(port), TURN_URLS: "", TURN_SHARED_SECRET: "" },
+    env: { ...process.env, PORT: String(port), TURN_URLS: "turn:relay.example.test:3478?transport=udp", TURN_SHARED_SECRET: "test-only-shared-secret" },
     stdio: "ignore"
   });
   const deadline = Date.now() + 8000;
@@ -95,6 +96,13 @@ test("session creation, viewer approval and signaling relay are enforced", async
   assert.equal(turnResponse.status, 200);
   const turnConfig = await turnResponse.json();
   assert.equal(turnConfig.iceServers[0].urls[0], "stun:stun.l.google.com:19302");
+  assert.equal(turnConfig.iceServers[1].urls[0], "turn:relay.example.test:3478?transport=udp");
+  const turnUsername = turnConfig.iceServers[1].username;
+  const [expiry, sessionTag] = turnUsername.split(":");
+  assert.equal(sessionTag, created.sessionId);
+  assert.ok(Number(expiry) > Math.floor(Date.now() / 1000));
+  const expectedCredential = createHmac("sha1", "test-only-shared-secret").update(turnUsername).digest("base64");
+  assert.equal(turnConfig.iceServers[1].credential, expectedCredential);
 
   const viewer = await connect(wsUrl);
   const waitingPromise = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
