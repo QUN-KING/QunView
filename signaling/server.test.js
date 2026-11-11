@@ -21,9 +21,9 @@ async function freePort() {
   });
 }
 
-function connect(url) {
+function connect(url, origin) {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(url);
+    const socket = new WebSocket(url, origin ? { headers: { Origin: origin } } : undefined);
     socket.once("open", () => resolve(socket));
     socket.once("error", reject);
   });
@@ -92,7 +92,7 @@ test("session creation, viewer approval and signaling relay are enforced", async
   const removedTurnEndpoint = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}`);
   assert.equal(removedTurnEndpoint.status, 404);
 
-  const viewer = await connect(wsUrl);
+  const viewer = await connect(wsUrl, "https://qunview-viewer.onrender.com");
   const waitingPromise = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
   const requestPromise = nextMessage(sender, m => m.type === "viewer-join-request");
   send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
@@ -127,13 +127,13 @@ test("a second viewer cannot occupy an already-used session", async () => {
   const createdPromise = nextMessage(sender, m => m.type === "session-created");
   send(sender, { type: "create-session" });
   const created = await createdPromise;
-  const first = await connect(wsUrl);
+  const first = await connect(wsUrl, "https://qunview-viewer.onrender.com");
   const firstWaiting = nextMessage(first, m => m.type === "waiting-for-sender-approval");
   const senderRequest = nextMessage(sender, m => m.type === "viewer-join-request");
   send(first, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
   await Promise.all([firstWaiting, senderRequest]);
 
-  const second = await connect(wsUrl);
+  const second = await connect(wsUrl, "https://qunview-viewer.onrender.com");
   const rejected = nextMessage(second, m => m.type === "error");
   send(second, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
   assert.match((await rejected).message, /already has a viewer/);
@@ -148,7 +148,7 @@ test("an approved connected viewer keeps consent when the sender resumes", async
   send(sender, { type: "create-session" });
   const created = await createdPromise;
 
-  const viewer = await connect(wsUrl);
+  const viewer = await connect(wsUrl, "https://qunview-viewer.onrender.com");
   const waiting = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
   const approvalRequest = nextMessage(sender, m => m.type === "viewer-join-request");
   send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
@@ -178,7 +178,7 @@ test("an approved connected viewer keeps consent when the sender resumes", async
   const viewerClosed = new Promise(resolve => viewer.once("close", resolve));
   viewer.close();
   await viewerClosed;
-  const nextViewer = await connect(wsUrl);
+  const nextViewer = await connect(wsUrl, "https://qunview-viewer.onrender.com");
   const freshWaiting = nextMessage(nextViewer, m => m.type === "waiting-for-sender-approval");
   const freshRequest = nextMessage(resumedSender, m => m.type === "viewer-join-request");
   send(nextViewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
@@ -194,7 +194,7 @@ test("an unapproved viewer still needs approval after sender resumes", async () 
   const createdPromise = nextMessage(sender, m => m.type === "session-created");
   send(sender, { type: "create-session" });
   const created = await createdPromise;
-  const viewer = await connect(wsUrl);
+  const viewer = await connect(wsUrl, "https://qunview-viewer.onrender.com");
   const waiting = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
   const request = nextMessage(sender, m => m.type === "viewer-join-request");
   send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
@@ -227,7 +227,7 @@ test("a socket already joined to one session cannot resume another session", asy
   send(senderB, { type: "create-session" });
   const sessionB = await createdBPromise;
 
-  const viewer = await connect(wsUrl);
+  const viewer = await connect(wsUrl, "https://qunview-viewer.onrender.com");
   const waiting = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
   const request = nextMessage(senderA, m => m.type === "viewer-join-request");
   send(viewer, { type: "join-session", sessionId: sessionA.sessionId, viewerToken: sessionA.viewerToken });
@@ -244,4 +244,17 @@ test("a socket already joined to one session cannot resume another session", asy
   send(senderA, { type: "end-session" });
   send(senderB, { type: "end-session" });
   senderA.close(); senderB.close(); viewer.close();
+});
+
+test("viewer joins require the exact hosted viewer origin", async () => {
+  const sender = await connect(wsUrl);
+  const createdPromise = nextMessage(sender, m => m.type === "session-created");
+  send(sender, { type: "create-session" });
+  const created = await createdPromise;
+  const viewer = await connect(wsUrl, "https://attacker.example");
+  const rejected = nextMessage(viewer, m => m.type === "error");
+  send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
+  assert.match((await rejected).message, /origin not allowed/);
+  send(sender, { type: "end-session" });
+  sender.close(); viewer.close();
 });
