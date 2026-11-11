@@ -20,8 +20,7 @@ async function loadIceServers(){
   endpoint.pathname="/turn-credentials";
   endpoint.search="";
   endpoint.searchParams.set("sessionId",sessionId);
-  endpoint.searchParams.set("token",viewerToken);
-  const response=await fetch(endpoint.toString(),{cache:"no-store",credentials:"omit"});
+  const response=await fetch(endpoint.toString(),{cache:"no-store",credentials:"omit",headers:{Authorization:"Bearer "+viewerToken}});
   if(!response.ok)throw new Error("ICE configuration unavailable");
   const config=await response.json();
   if(Array.isArray(config.iceServers)&&config.iceServers.length)iceServers=config.iceServers;
