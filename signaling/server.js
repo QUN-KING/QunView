@@ -177,13 +177,17 @@ wss.on("connection", (socket, request) => {
         return send(socket, { type: "error", message: "Sender is already connected" });
       }
       session.sender = socket;
-      session.approved = false;
+      const viewerStillConnected = Boolean(session.viewer && session.viewer.readyState === WebSocket.OPEN);
+      if (!viewerStillConnected) session.approved = false;
       touchSession(id, session);
       session.clients.add(socket);
       socket.sessionId = id;
       socket.role = "sender";
-      send(socket, { type: "session-resumed", sessionId: id });
-      if (session.viewer && session.viewer.readyState === WebSocket.OPEN) requestViewerApproval(session);
+      send(socket, { type: "session-resumed", sessionId: id, viewerApproved: Boolean(session.approved && viewerStillConnected) });
+      if (viewerStillConnected) {
+        if (session.approved) send(session.viewer, { type: "sender-reconnected" });
+        else requestViewerApproval(session);
+      }
       return;
     }
 
@@ -275,7 +279,8 @@ wss.on("connection", (socket, request) => {
     if (socket.role === "sender") {
       if (session.sender === socket) {
         session.sender = null;
-        session.approved = false;
+        // Preserve viewing consent only while the exact same viewer socket remains connected.
+        if (!session.viewer || session.viewer.readyState !== WebSocket.OPEN) session.approved = false;
         if (session.viewer) send(session.viewer, { type: "sender-disconnected" });
       }
       if (session.clients.size === 0) cleanSession(id);
