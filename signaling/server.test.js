@@ -113,9 +113,9 @@ test("session creation, viewer approval and signaling relay are enforced", async
   send(viewer, answer);
   assert.deepEqual(await relayedAnswer, answer);
 
-  const endedPromise = nextMessage(viewer, m => m.type === "viewer-left" || m.type === "sender-disconnected");
+  const viewerClosed = new Promise(resolve => viewer.once("close", resolve));
   send(sender, { type: "end-session" });
-  await endedPromise;
+  await viewerClosed;
   sender.close();
   viewer.close();
 });
