@@ -67,4 +67,4 @@ Complete this checklist on two physical Android phones before calling a release 
 - [ ] Test on a network where direct peer-to-peer WebRTC is blocked; verify TURN relay works after a real TURN provider is configured.
 - [ ] Disable the QunView Accessibility service in Android Settings and verify remote commands are revoked.
 
-Do not mark the TURN test complete while only the STUN fallback is configured. Do not mark the release ready based on CI or APK creation alone.
+Do not mark the release ready based on CI or APK creation alone.
