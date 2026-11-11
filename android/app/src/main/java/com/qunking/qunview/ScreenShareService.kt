@@ -73,7 +73,7 @@ class ScreenShareService : Service() {
                 Log.w(TAG, "Temporary connection issue: " + message)
             },
             onViewerRequest = { showViewerRequestNotification() },
-            onRemoteControlRequest = { showRemoteControlRequestNotification() },
+            onRemoteControlRequest = { showRemoteControlRequestNotification(); sendBroadcast(Intent(ACTION_REMOTE_CONTROL_REQUEST).setPackage(packageName)) },
             onViewerLeft = { clearViewerRequest() },
             onStopped = { clearViewerRequest(); stopSelf() }
         )
@@ -213,6 +213,7 @@ class ScreenShareService : Service() {
         const val ACTION_APPROVE_REMOTE_CONTROL = "com.qunking.qunview.APPROVE_REMOTE_CONTROL"
         const val ACTION_DENY_REMOTE_CONTROL = "com.qunking.qunview.DENY_REMOTE_CONTROL"
         const val ACTION_VIEWER_REQUEST = "com.qunking.qunview.VIEWER_REQUEST"
+        const val ACTION_REMOTE_CONTROL_REQUEST = "com.qunking.qunview.REMOTE_CONTROL_REQUEST"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         const val ACTION_SESSION_READY = "com.qunking.qunview.SESSION_READY"
