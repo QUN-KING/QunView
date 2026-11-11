@@ -41,6 +41,7 @@ class WebRtcScreenStreamer(
     companion object {
         private const val TAG = "QunViewWebRTC"
         private const val SIGNALING_URL = "wss://qunview-signaling.onrender.com"
+        private const val SIGNALING_HTTP_URL = "https://qunview-signaling.onrender.com"
         private const val VIEWER_BASE_URL = "https://qunview-viewer.onrender.com"
     }
 
@@ -136,7 +137,7 @@ class WebRtcScreenStreamer(
         val id = sessionId ?: return servers
         val token = resumeToken ?: return servers
         try {
-            val url = SIGNALING_URL + "/turn-credentials?sessionId=" + id + "&token=" + token
+            val url = SIGNALING_HTTP_URL + "/turn-credentials?sessionId=" + id + "&token=" + token
             val request = Request.Builder().url(url).header("Cache-Control", "no-cache").get().build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return servers
