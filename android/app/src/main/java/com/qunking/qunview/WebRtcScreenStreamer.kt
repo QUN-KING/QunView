@@ -288,7 +288,16 @@ class WebRtcScreenStreamer(
                     retryPending = false
                     onSessionReady("$VIEWER_BASE_URL/?session=$sessionId&key=$viewerToken&signal=$SIGNALING_URL")
                 }
-                "session-resumed" -> { retryDelay = 2L; retryPending = false; viewerApproved = false; remoteControlApproved = false }
+                "session-resumed" -> {
+                    retryDelay = 2L
+                    retryPending = false
+                    viewerApproved = message.optBoolean("viewerApproved", false)
+                    // Remote-control permission is always requested again after reconnect.
+                    remoteControlApproved = false
+                    remoteControlRequestPending = false
+                    pendingRemoteIce.clear()
+                    if (viewerApproved) createOffer()
+                }
                 "viewer-join-request" -> {
                     viewerApproved = false
                     remoteControlApproved = false
