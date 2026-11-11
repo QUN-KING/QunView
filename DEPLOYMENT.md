@@ -42,7 +42,7 @@ QunView does not record or save screen video. Optional remote assistance (Back, 
 ## Consent and operational notes
 
 - Android MediaProjection consent is shown for each new capture session; it cannot be silently reused for a new session.
-- While a capture session remains active, a viewer can reconnect without restarting screen capture. The sender must approve the viewer connection again.
+- While the same viewer WebSocket remains connected, a temporary sender signaling interruption can recover without restarting screen capture or asking for viewing approval again. If the viewer browser connection itself closes and rejoins, the owner must approve that new viewer connection.
 - The sender receives a single Allow/Deny notification for a pending viewer request and a separate ongoing Stop sharing notification.
 - Android notification permission, channel settings, Do Not Disturb, and manufacturer battery restrictions can affect notification delivery.
 - TURN support is implemented but remains optional until Cloudflare Realtime TURN (or a separately operated coturn server) is configured. The current free Render blueprint does not provision a TURN relay; without provider credentials, connections use STUN only. Cloudflare Realtime TURN has a shared free tier of 1,000 GB of egress before charges; beyond that, usage is $0.05 per real-time GB. The free tier is shared with Realtime SFU rather than being a separate allowance for each service. QunView currently uses peer-to-peer WebRTC and its own signaling service, not Realtime SFU. Monitor Cloudflare usage and billing.
