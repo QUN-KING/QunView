@@ -3,6 +3,7 @@
 const http = require("node:http");
 const { randomBytes, timingSafeEqual, createHmac } = require("node:crypto");
 const { WebSocketServer, WebSocket } = require("ws");
+const { requestCloudflareIceServers, CLOUDFLARE_TURN_TTL_SECONDS } = require("./turn-credentials");
 
 const PORT = Number(process.env.PORT || 8080);
 const sessions = new Map();
@@ -14,7 +15,6 @@ const TURN_URLS = (process.env.TURN_URLS || "").split(",").map(value => value.tr
 const TURN_SHARED_SECRET = process.env.TURN_SHARED_SECRET || "";
 const CLOUDFLARE_TURN_KEY_ID = process.env.CLOUDFLARE_TURN_KEY_ID || "";
 const CLOUDFLARE_TURN_API_TOKEN = process.env.CLOUDFLARE_TURN_API_TOKEN || "";
-const CLOUDFLARE_TURN_TTL_SECONDS = 12 * 60 * 60;
 
 const server = http.createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
@@ -58,26 +58,10 @@ const server = http.createServer(async (req, res) => {
     let expiresInSeconds = TURN_CREDENTIAL_TTL_SECONDS;
     if (CLOUDFLARE_TURN_KEY_ID && CLOUDFLARE_TURN_API_TOKEN) {
       try {
-        const turnResponse = await fetch(
-          `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(CLOUDFLARE_TURN_KEY_ID)}/credentials/generate-ice-servers`,
-          {
-            method: "POST",
-            headers: {
-              "authorization": `Bearer ${CLOUDFLARE_TURN_API_TOKEN}`,
-              "content-type": "application/json"
-            },
-            body: JSON.stringify({ ttl: CLOUDFLARE_TURN_TTL_SECONDS }),
-            signal: AbortSignal.timeout(8000)
-          }
-        );
-        if (!turnResponse.ok) throw new Error("Cloudflare TURN credential request failed");
-        const turnPayload = await turnResponse.json();
-        if (!Array.isArray(turnPayload.iceServers) || !turnPayload.iceServers.some(item =>
-          item && (Array.isArray(item.urls) ? item.urls : [item.urls]).some(url =>
-            typeof url === "string" && (url.startsWith("turn:") || url.startsWith("turns:"))))) {
-          throw new Error("Cloudflare returned no TURN relay server");
-        }
-        iceServers.push(...turnPayload.iceServers);
+        iceServers.push(...await requestCloudflareIceServers({
+          keyId: CLOUDFLARE_TURN_KEY_ID,
+          apiToken: CLOUDFLARE_TURN_API_TOKEN
+        }));
         expiresInSeconds = CLOUDFLARE_TURN_TTL_SECONDS;
       } catch (error) {
         console.warn("Cloudflare TURN credentials unavailable; using STUN fallback.");
