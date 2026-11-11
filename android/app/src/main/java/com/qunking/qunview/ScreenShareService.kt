@@ -12,10 +12,6 @@ import android.os.IBinder
 import android.util.Log
 
 class ScreenShareService : Service() {
-    companion object {
-        @Volatile var isActive = false
-            private set
-    }
     private var streamer: WebRtcScreenStreamer? = null
     @Volatile private var viewerRequestPending = false
     @Volatile private var remoteControlRequestPending = false
@@ -222,6 +218,9 @@ class ScreenShareService : Service() {
     }
 
     companion object {
+        @Volatile var isActive = false
+            private set
+
         const val ACTION_STOP_SHARING = "com.qunking.qunview.STOP_SHARING"
         const val ACTION_APPROVE_VIEWER = "com.qunking.qunview.APPROVE_VIEWER"
         const val ACTION_DENY_VIEWER = "com.qunking.qunview.DENY_VIEWER"
