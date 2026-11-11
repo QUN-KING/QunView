@@ -94,7 +94,7 @@ test("session creation, viewer approval and signaling relay are enforced", async
   assert.equal(invalidTurn.status, 403);
   const wrongMethod = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}&token=${created.resumeToken}`, { method: "POST" });
   assert.equal(wrongMethod.status, 405);
-  const turnResponse = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}&token=${created.resumeToken}`);
+  const turnResponse = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}`, { headers: { Authorization: `Bearer ${created.resumeToken}` } });
   assert.equal(turnResponse.status, 200);
   const turnConfig = await turnResponse.json();
   assert.equal(turnConfig.iceServers[0].urls[0], "stun:stun.l.google.com:19302");
