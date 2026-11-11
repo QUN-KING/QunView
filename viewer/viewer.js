@@ -15,7 +15,7 @@ function requestRemoteControl(){if(!controlChannel||controlChannel.readyState!==
 function resetRemoteHelp(){controlEnabled=false;controlPending=false;helpBtn.textContent="Request remote help";setControls(false)}
 async function loadIceServers(){
  try{
-  const endpoint=new URL("/turn-credentials",signalingUrl);
+  const endpoint=new URL(signalingUrl);\n  endpoint.protocol="https:";\n  endpoint.pathname="/turn-credentials";\n  endpoint.search="";
   endpoint.searchParams.set("sessionId",sessionId);
   endpoint.searchParams.set("token",viewerToken);
   const response=await fetch(endpoint.toString(),{cache:"no-store",credentials:"omit"});
