@@ -47,3 +47,24 @@ QunView does not record or save screen video. Optional remote assistance (Back, 
 - Android notification permission, channel settings, Do Not Disturb, and manufacturer battery restrictions can affect notification delivery.
 - TURN support is implemented but remains optional until a TURN provider/server is configured. The current free Render blueprint does not provision a TURN relay; without the two environment variables, connections use STUN only.
 - Do not distribute as production-ready until two-device testing covers approval, denial, background notifications, stop, reconnect, and optional remote assistance.
+
+
+## Two-device release checklist
+
+Complete this checklist on two physical Android phones before calling a release ready. Record the Android version and device model for each phone.
+
+- [ ] Install the same newly built APK on the sender phone; open the viewer URL on the second phone.
+- [ ] Start a share and verify Android displays its system MediaProjection consent prompt.
+- [ ] Request to view from the viewer phone; verify the sender can Allow and Deny independently.
+- [ ] Deny once and confirm no screen frames are shown; request again and Allow.
+- [ ] Confirm the viewer sees the live screen only after the sender allows it.
+- [ ] Request remote assistance; confirm it remains disabled until the sender separately approves it.
+- [ ] Verify Back, Home, tap, and swipe only work after remote-assistance approval.
+- [ ] Disable remote assistance from the sender notification and verify commands stop immediately.
+- [ ] Stop screen sharing from the persistent Android notification and verify the viewer loses the stream.
+- [ ] Repeat with the sender app backgrounded, screen locked/unlocked, and viewer browser closed/reopened.
+- [ ] Test a Wi-Fi-to-mobile-data or other network change and reconnect behavior.
+- [ ] Test on a network where direct peer-to-peer WebRTC is blocked; verify TURN relay works after a real TURN provider is configured.
+- [ ] Disable the QunView Accessibility service in Android Settings and verify remote commands are revoked.
+
+Do not mark the TURN test complete while only the STUN fallback is configured. Do not mark the release ready based on CI or APK creation alone.
