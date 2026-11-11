@@ -57,7 +57,7 @@ before(async () => {
   wsUrl = `ws://127.0.0.1:${port}`;
   serverProcess = spawn(process.execPath, ["server.js"], {
     cwd: __dirname,
-    env: { ...process.env, PORT: String(port) },
+    env: { ...process.env, PORT: String(port), TURN_URLS: "", TURN_SHARED_SECRET: "" },
     stdio: "ignore"
   });
   const deadline = Date.now() + 8000;
@@ -89,6 +89,12 @@ test("session creation, viewer approval and signaling relay are enforced", async
   assert.match(created.sessionId, /^[a-f0-9]{32}$/);
   assert.match(created.resumeToken, /^[a-f0-9]{64}$/);
   assert.match(created.viewerToken, /^[a-f0-9]{64}$/);
+  const invalidTurn = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}&token=wrong`);
+  assert.equal(invalidTurn.status, 403);
+  const turnResponse = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}&token=${created.resumeToken}`);
+  assert.equal(turnResponse.status, 200);
+  const turnConfig = await turnResponse.json();
+  assert.equal(turnConfig.iceServers[0].urls[0], "stun:stun.l.google.com:19302");
 
   const viewer = await connect(wsUrl);
   const waitingPromise = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
