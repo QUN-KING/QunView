@@ -16,18 +16,34 @@ const TURN_SHARED_SECRET = process.env.TURN_SHARED_SECRET || "";
 const server = http.createServer((req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
   if (pathname === "/turn-credentials") {
+    const origin = req.headers.origin;
+    if (req.method === "OPTIONS") {
+      if (origin !== VIEWER_ORIGIN) {
+        res.writeHead(403, { "cache-control": "no-store" });
+        return res.end();
+      }
+      res.writeHead(204, {
+        "access-control-allow-origin": VIEWER_ORIGIN,
+        "access-control-allow-methods": "GET, OPTIONS",
+        "access-control-allow-headers": "Authorization",
+        "access-control-max-age": "600",
+        "cache-control": "no-store",
+        "vary": "Origin"
+      });
+      return res.end();
+    }
     if (req.method !== "GET") {
       res.writeHead(405, { "content-type": "application/json", "allow": "GET", "cache-control": "no-store" });
       return res.end(JSON.stringify({ error: "Method not allowed" }));
     }
-    const origin = req.headers.origin;
     if (origin && origin !== VIEWER_ORIGIN) {
       res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store" });
       return res.end(JSON.stringify({ error: "Origin not allowed" }));
     }
     const params = new URL(req.url, "http://localhost").searchParams;
     const id = params.get("sessionId") || "";
-    const token = params.get("token") || "";
+    const authorization = req.headers.authorization || "";
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
     const session = sessions.get(id);
     if (!session || Date.now() - session.lastActivityAt > SESSION_TTL_MS ||
         (!tokenMatches(session.viewerToken, token) && !tokenMatches(session.resumeToken, token))) {
