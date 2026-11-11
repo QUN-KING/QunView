@@ -27,7 +27,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
 
-/** Sender-side WebRTC pipeline. Screen frames are never recorded or saved; TURN credentials are fetched per authenticated session. */
+/** Sender-side WebRTC pipeline. Screen frames are never recorded or saved; networking is free STUN-only. */
 class WebRtcScreenStreamer(
     private val context: Context,
     private val projectionPermission: Intent,
@@ -41,7 +41,6 @@ class WebRtcScreenStreamer(
     companion object {
         private const val TAG = "QunViewWebRTC"
         private const val SIGNALING_URL = "wss://qunview-signaling.onrender.com"
-        private const val SIGNALING_HTTP_URL = "https://qunview-signaling.onrender.com"
         private const val VIEWER_BASE_URL = "https://qunview-viewer.onrender.com"
     }
 
@@ -50,6 +49,7 @@ class WebRtcScreenStreamer(
     @Volatile private var viewerApproved = false
     @Volatile private var remoteControlApproved = false
     @Volatile private var remoteControlRequestPending = false
+    @Volatile private var approvedAccessibilityService: QunViewAccessibilityService? = null
     private var socket: WebSocket? = null
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
@@ -132,38 +132,8 @@ class WebRtcScreenStreamer(
         videoTrack!!.setEnabled(true)
     }
 
-    private fun fetchIceServers(): List<PeerConnection.IceServer> {
-        val servers = mutableListOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
-        val id = sessionId ?: return servers
-        val token = resumeToken ?: return servers
-        try {
-            val url = SIGNALING_HTTP_URL + "/turn-credentials?sessionId=" + id
-            val request = Request.Builder().url(url).header("Cache-Control", "no-cache")
-                .header("Authorization", "Bearer " + token).get().build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return servers
-                val payload = JSONObject(response.body?.string() ?: return servers)
-                val list = payload.optJSONArray("iceServers") ?: return servers
-                for (index in 0 until list.length()) {
-                    val item = list.optJSONObject(index) ?: continue
-                    val urls = item.optJSONArray("urls") ?: continue
-                    val username = item.optString("username")
-                    val credential = item.optString("credential")
-                    if (username.isBlank() || credential.isBlank()) continue
-                    for (urlIndex in 0 until urls.length()) {
-                        val turnUrl = urls.optString(urlIndex)
-                        if (turnUrl.startsWith("turn:") || turnUrl.startsWith("turns:")) {
-                            servers.add(PeerConnection.IceServer.builder(turnUrl)
-                                .setUsername(username).setPassword(credential).createIceServer())
-                        }
-                    }
-                }
-            }
-        } catch (error: Exception) {
-            Log.w(TAG, "TURN configuration unavailable; using STUN only", error)
-        }
-        return servers
-    }
+    private fun fetchIceServers(): List<PeerConnection.IceServer> =
+        listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
 
     private fun createPeer() {
         if (stopped || peer != null) return
@@ -187,16 +157,15 @@ class WebRtcScreenStreamer(
             override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<out org.webrtc.MediaStream>) {}
         })
         peer?.addTrack(videoTrack, listOf("QunViewScreenStream"))
-        controlChannel = peer?.createDataChannel("qunview-control", DataChannel.Init())
-        controlChannel?.registerObserver(object : DataChannel.Observer {
+        val observedControlChannel = peer?.createDataChannel("qunview-control", DataChannel.Init())
+        controlChannel = observedControlChannel
+        observedControlChannel?.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) {}
             override fun onStateChange() {
-                if (controlChannel?.state() == DataChannel.State.CLOSED ||
-                    controlChannel?.state() == DataChannel.State.CLOSING) {
-                    // A lost remote-control channel revokes the prior approval.
-                    // A reconnected viewer must request and receive fresh owner consent.
-                    remoteControlApproved = false
-                    remoteControlRequestPending = false
+                if (controlChannel === observedControlChannel &&
+                    (observedControlChannel.state() == DataChannel.State.CLOSED ||
+                     observedControlChannel.state() == DataChannel.State.CLOSING)) {
+                    revokeRemoteControlApproval()
                 }
             }
             override fun onMessage(buffer: DataChannel.Buffer) {
@@ -207,21 +176,32 @@ class WebRtcScreenStreamer(
                         val command = JSONObject(String(bytes, Charsets.UTF_8))
                         when (command.optString("action")) {
                             "request-control" -> {
-                                if (viewerApproved && QunViewAccessibilityService.instance != null) {
-                                    if (remoteControlApproved) sendControlReply("control-approved")
-                                    else if (!remoteControlRequestPending) {
-                                        remoteControlRequestPending = true
-                                        onRemoteControlRequest()
+                                val accessibilityService = QunViewAccessibilityService.instance
+                                if (viewerApproved && accessibilityService != null) {
+                                    if (remoteControlApproved && approvedAccessibilityService === accessibilityService) {
+                                        sendControlReply("control-approved")
+                                    } else {
+                                        revokeRemoteControlApproval()
+                                        if (!remoteControlRequestPending) {
+                                            remoteControlRequestPending = true
+                                            onRemoteControlRequest()
+                                        }
                                     }
-                                } else sendControlReply("control-denied")
+                                } else {
+                                    revokeRemoteControlApproval()
+                                    sendControlReply("control-denied")
+                                }
                             }
-                            "release-control" -> {
-                                remoteControlApproved = false
-                                remoteControlRequestPending = false
-                            }
+                            "release-control" -> revokeRemoteControlApproval()
                             "back", "home", "tap", "swipe" -> {
-                                if (viewerApproved && remoteControlApproved && QunViewAccessibilityService.instance != null)
-                                    QunViewAccessibilityService.instance?.performRemoteCommand(command)
+                                val accessibilityService = QunViewAccessibilityService.instance
+                                if (viewerApproved && remoteControlApproved &&
+                                    accessibilityService != null &&
+                                    approvedAccessibilityService === accessibilityService) {
+                                    accessibilityService.performRemoteCommand(command)
+                                } else if (remoteControlApproved) {
+                                    revokeRemoteControlApproval()
+                                }
                             }
                         }
                     } catch (error: Exception) { Log.w(TAG, "Rejected control message", error) }
@@ -242,15 +222,26 @@ class WebRtcScreenStreamer(
             return false
         }
         remoteControlRequestPending = false
+        approvedAccessibilityService = QunViewAccessibilityService.instance
+        if (approvedAccessibilityService == null) {
+            revokeRemoteControlApproval()
+            sendControlReply("control-denied")
+            return false
+        }
         remoteControlApproved = true
         sendControlReply("control-approved")
         return true
     }
 
     @Synchronized fun denyRemoteControl() {
+        revokeRemoteControlApproval()
+        sendControlReply("control-denied")
+    }
+
+    private fun revokeRemoteControlApproval() {
         remoteControlApproved = false
         remoteControlRequestPending = false
-        sendControlReply("control-denied")
+        approvedAccessibilityService = null
     }
 
     private fun sendControlReply(action: String) {
@@ -301,8 +292,7 @@ class WebRtcScreenStreamer(
                     retryPending = false
                     viewerApproved = message.optBoolean("viewerApproved", false)
                     // Remote-control permission is always requested again after reconnect.
-                    remoteControlApproved = false
-                    remoteControlRequestPending = false
+                    revokeRemoteControlApproval()
                     pendingRemoteIce.clear()
                     if (viewerApproved) createOffer()
                 }
@@ -366,8 +356,7 @@ class WebRtcScreenStreamer(
         if (stopped) return
         stopped = true
         viewerApproved = false
-        remoteControlApproved = false
-        remoteControlRequestPending = false
+        revokeRemoteControlApproval()
         socket?.send(JSONObject().put("type", "end-session").toString())
         socket?.close(1000, "Sender stopped")
         socket = null
