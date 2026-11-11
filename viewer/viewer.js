@@ -5,16 +5,17 @@ const statusText=document.getElementById("status");
 const screenArea=document.getElementById("screenArea");
 const backBtn=document.getElementById("backBtn"),homeBtn=document.getElementById("homeBtn"),helpBtn=document.getElementById("helpBtn");
 const params=new URLSearchParams(location.search),sessionId=params.get("session"),viewerToken=params.get("key"),signalingUrl=params.get("signal");
-let socket,peer,controlChannel,pendingIceCandidates=[],viewerClosing=false,reconnectTimer=null,reconnectDelaySeconds=2,connectionAttempt=0,controlEnabled=false,touchStart=null,peerDisconnectTimer=null;
+let socket,peer,controlChannel,pendingIceCandidates=[],viewerClosing=false,reconnectTimer=null,reconnectDelaySeconds=2,connectionAttempt=0,controlEnabled=false,controlPending=false,touchStart=null,peerDisconnectTimer=null;
 function setStatus(s){statusText.textContent=s}
 function showWaiting(s){video.srcObject=null;video.classList.remove("active");placeholder.hidden=false;setStatus(s);setControls(false)}
 function setControls(ready){backBtn.disabled=!ready;homeBtn.disabled=!ready;helpBtn.disabled=!ready||!controlChannel||controlChannel.readyState!=="open"}
 function sendControl(data){if(!controlEnabled||!controlChannel||controlChannel.readyState!=="open")return;controlChannel.send(JSON.stringify(data))}
-function resetRemoteHelp(){controlEnabled=false;helpBtn.textContent="Enable remote help";setControls(false)}
+function requestRemoteControl(){if(!controlChannel||controlChannel.readyState!=="open"||controlPending)return;controlPending=true;helpBtn.disabled=true;helpBtn.textContent="Waiting for phone owner";controlChannel.send(JSON.stringify({action:"request-control"}));setStatus("Waiting for the phone owner to approve remote controls…")}
+function resetRemoteHelp(){controlEnabled=false;controlPending=false;helpBtn.textContent="Request remote help";setControls(false)}
 function createPeer(){
  if(peer)peer.close();pendingIceCandidates=[];controlChannel=null;resetRemoteHelp();
  peer=new RTCPeerConnection({iceServers:[{urls:["stun:stun.l.google.com:19302"]}]});
- peer.ondatachannel=e=>{if(e.channel.label!=="qunview-control")return;controlChannel=e.channel;controlChannel.onopen=()=>{setControls(true);setStatus("Connected — remote help channel ready")};controlChannel.onclose=()=>{controlEnabled=false;setControls(false)};};
+ peer.ondatachannel=e=>{if(e.channel.label!=="qunview-control")return;controlChannel=e.channel;controlChannel.onopen=()=>{setControls(true);setStatus("Connected — screen viewing only")};controlChannel.onmessage=event=>{let msg;try{msg=JSON.parse(event.data)}catch{return}if(msg.action==="control-approved"){controlPending=false;controlEnabled=true;helpBtn.disabled=false;helpBtn.textContent="Pause remote help";setStatus("Remote controls approved by phone owner")}else if(msg.action==="control-denied"){controlPending=false;controlEnabled=false;helpBtn.disabled=false;helpBtn.textContent="Request remote help";setStatus("Phone owner did not allow remote controls")}};controlChannel.onclose=()=>{controlEnabled=false;controlPending=false;setControls(false)};};
  peer.ontrack=e=>{const stream=e.streams&&e.streams[0];if(!stream)return;video.srcObject=stream;video.classList.add("active");placeholder.hidden=true;setStatus("Live screen");setControls(true);video.play().catch(()=>setStatus("Tap the video to start playback."));};
  peer.onicecandidate=e=>{if(e.candidate&&socket&&socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:"ice-candidate",data:e.candidate}))};
  peer.onconnectionstatechange=()=>{if(!peer)return;const state=peer.connectionState;if(state==="connected"){if(peerDisconnectTimer){clearTimeout(peerDisconnectTimer);peerDisconnectTimer=null}reconnectDelaySeconds=2;setStatus("Connected — waiting for video…")}else if(state==="failed"){setStatus("Connection failed. Reconnecting…");if(socket&&socket.readyState===WebSocket.OPEN)socket.close(1011,"WebRTC connection failed")}else if(state==="disconnected"){setStatus("Connection interrupted. Checking connection…");if(peerDisconnectTimer)clearTimeout(peerDisconnectTimer);peerDisconnectTimer=setTimeout(()=>{peerDisconnectTimer=null;if(peer&&peer.connectionState==="disconnected"&&socket&&socket.readyState===WebSocket.OPEN)socket.close(1011,"WebRTC connection lost")},5000)}};
@@ -30,7 +31,7 @@ async function connectViewer(){
  ws.onerror=()=>setStatus("Signaling error. Reconnecting…");ws.onclose=event=>{if(!viewerClosing&&attempt===connectionAttempt&&event.code!==1000&&event.code!==1008)scheduleViewerReconnect()};
 }
 backBtn.onclick=()=>sendControl({action:"back"});homeBtn.onclick=()=>sendControl({action:"home"});
-helpBtn.onclick=()=>{controlEnabled=!controlEnabled;helpBtn.textContent=controlEnabled?"Pause remote help":"Enable remote help";setStatus(controlEnabled?"Remote help enabled":"Remote help paused")};
+helpBtn.onclick=()=>{if(controlEnabled){controlEnabled=false;helpBtn.textContent="Request remote help";setStatus("Remote help paused on viewer")}else requestRemoteControl()};
 screenArea.addEventListener("pointerdown",e=>{if(!controlEnabled||!video.classList.contains("active"))return;const r=video.getBoundingClientRect();touchStart={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height,time:Date.now()}});
 screenArea.addEventListener("pointerup",e=>{if(!touchStart||!controlEnabled)return;const r=video.getBoundingClientRect(),x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y=Math.max(0,Math.min(1,(e.clientY-r.top)/r.height));const dx=x-touchStart.x,dy=y-touchStart.y;if(Math.abs(dx)+Math.abs(dy)<0.035)sendControl({action:"tap",x:touchStart.x,y:touchStart.y});else sendControl({action:"swipe",x1:touchStart.x,y1:touchStart.y,x2:x,y2:y});touchStart=null});
 window.addEventListener("beforeunload",()=>{viewerClosing=true;if(reconnectTimer)clearTimeout(reconnectTimer);if(peerDisconnectTimer)clearTimeout(peerDisconnectTimer);if(socket&&socket.readyState===WebSocket.OPEN)socket.close();if(peer)peer.close()});
