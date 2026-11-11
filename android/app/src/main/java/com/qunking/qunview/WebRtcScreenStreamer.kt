@@ -270,6 +270,10 @@ class WebRtcScreenStreamer(
         approvedAccessibilityService = null
     }
 
+    private fun revokeRemoteControlAndNotify() {
+        revokeRemoteControlAndNotify()
+    }
+
     private fun sendControlReply(action: String) {
         val bytes = ByteBuffer.wrap(JSONObject().put("action", action).toString().toByteArray(Charsets.UTF_8))
         controlChannel?.send(DataChannel.Buffer(bytes, false))
@@ -318,7 +322,7 @@ class WebRtcScreenStreamer(
                     retryPending = false
                     viewerApproved = message.optBoolean("viewerApproved", false)
                     // Remote-control permission is always requested again after reconnect.
-                    revokeRemoteControlApproval()
+                    revokeRemoteControlAndNotify()
                     pendingRemoteIce.clear()
                     if (viewerApproved) createOffer()
                 }
