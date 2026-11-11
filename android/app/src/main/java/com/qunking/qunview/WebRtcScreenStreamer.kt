@@ -165,12 +165,17 @@ class WebRtcScreenStreamer(
                         val command = JSONObject(String(bytes, Charsets.UTF_8))
                         when (command.optString("action")) {
                             "request-control" -> {
-                                if (viewerApproved && QunViewAccessibilityService.instance != null && !remoteControlApproved) {
-                                    if (!remoteControlRequestPending) {
+                                if (viewerApproved && QunViewAccessibilityService.instance != null) {
+                                    if (remoteControlApproved) sendControlReply("control-approved")
+                                    else if (!remoteControlRequestPending) {
                                         remoteControlRequestPending = true
                                         onRemoteControlRequest()
                                     }
-                                } else if (!remoteControlApproved) sendControlReply("control-denied")
+                                } else sendControlReply("control-denied")
+                            }
+                            "release-control" -> {
+                                remoteControlApproved = false
+                                remoteControlRequestPending = false
                             }
                             "back", "home", "tap", "swipe" -> {
                                 if (viewerApproved && remoteControlApproved && QunViewAccessibilityService.instance != null)
