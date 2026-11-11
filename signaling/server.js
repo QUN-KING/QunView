@@ -1,81 +1,17 @@
 "use strict";
 
 const http = require("node:http");
-const { randomBytes, timingSafeEqual, createHmac } = require("node:crypto");
+const { randomBytes, timingSafeEqual } = require("node:crypto");
 const { WebSocketServer, WebSocket } = require("ws");
-const { requestCloudflareIceServers, CLOUDFLARE_TURN_TTL_SECONDS } = require("./turn-credentials");
 
 const PORT = Number(process.env.PORT || 8080);
 const sessions = new Map();
 const MAX_CLIENTS_PER_SESSION = 2;
 const SESSION_TTL_MS = 30 * 60 * 1000;
-const TURN_CREDENTIAL_TTL_SECONDS = 10 * 60;
 const VIEWER_ORIGIN = "https://qunview-viewer.onrender.com";
-const TURN_URLS = (process.env.TURN_URLS || "").split(",").map(value => value.trim()).filter(Boolean);
-const TURN_SHARED_SECRET = process.env.TURN_SHARED_SECRET || "";
-const CLOUDFLARE_TURN_KEY_ID = process.env.CLOUDFLARE_TURN_KEY_ID || "";
-const CLOUDFLARE_TURN_API_TOKEN = process.env.CLOUDFLARE_TURN_API_TOKEN || "";
 
 const server = http.createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
-  if (pathname === "/turn-credentials") {
-    const origin = req.headers.origin;
-    if (req.method === "OPTIONS") {
-      if (origin !== VIEWER_ORIGIN) {
-        res.writeHead(403, { "cache-control": "no-store" });
-        return res.end();
-      }
-      res.writeHead(204, {
-        "access-control-allow-origin": VIEWER_ORIGIN,
-        "access-control-allow-methods": "GET, OPTIONS",
-        "access-control-allow-headers": "Authorization",
-        "access-control-max-age": "600",
-        "cache-control": "no-store",
-        "vary": "Origin"
-      });
-      return res.end();
-    }
-    if (req.method !== "GET") {
-      res.writeHead(405, { "content-type": "application/json", "allow": "GET", "cache-control": "no-store" });
-      return res.end(JSON.stringify({ error: "Method not allowed" }));
-    }
-    if (origin && origin !== VIEWER_ORIGIN) {
-      res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store" });
-      return res.end(JSON.stringify({ error: "Origin not allowed" }));
-    }
-    const params = new URL(req.url, "http://localhost").searchParams;
-    const id = params.get("sessionId") || "";
-    const authorization = req.headers.authorization || "";
-    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-    const session = sessions.get(id);
-    if (!session || Date.now() - session.lastActivityAt > SESSION_TTL_MS ||
-        (!tokenMatches(session.viewerToken, token) && !tokenMatches(session.resumeToken, token))) {
-      res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store",
-        ...(origin === VIEWER_ORIGIN ? { "access-control-allow-origin": VIEWER_ORIGIN, "vary": "Origin" } : {}) });
-      return res.end(JSON.stringify({ error: "Invalid or expired session token" }));
-    }
-    const iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
-    let expiresInSeconds = TURN_CREDENTIAL_TTL_SECONDS;
-    if (CLOUDFLARE_TURN_KEY_ID && CLOUDFLARE_TURN_API_TOKEN) {
-      try {
-        iceServers.push(...await requestCloudflareIceServers({
-          keyId: CLOUDFLARE_TURN_KEY_ID,
-          apiToken: CLOUDFLARE_TURN_API_TOKEN
-        }));
-        expiresInSeconds = CLOUDFLARE_TURN_TTL_SECONDS;
-      } catch (error) {
-        console.warn("Cloudflare TURN credentials unavailable; using STUN fallback.");
-      }
-    } else if (TURN_URLS.length && TURN_SHARED_SECRET) {
-      const expiresAt = Math.floor(Date.now() / 1000) + TURN_CREDENTIAL_TTL_SECONDS;
-      const username = String(expiresAt) + ":" + id;
-      const credential = createHmac("sha1", TURN_SHARED_SECRET).update(username).digest("base64");
-      iceServers.push({ urls: TURN_URLS, username, credential });
-    }
-    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store",
-      ...(origin === VIEWER_ORIGIN ? { "access-control-allow-origin": VIEWER_ORIGIN, "vary": "Origin" } : {}) });
-    return res.end(JSON.stringify({ iceServers, expiresInSeconds }));
-  }
   if (pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({ ok: true, service: "qunview-signaling" }));
