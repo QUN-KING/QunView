@@ -16,9 +16,13 @@ const TURN_SHARED_SECRET = process.env.TURN_SHARED_SECRET || "";
 const server = http.createServer((req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
   if (pathname === "/turn-credentials") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { "content-type": "application/json", "allow": "GET", "cache-control": "no-store" });
+      return res.end(JSON.stringify({ error: "Method not allowed" }));
+    }
     const origin = req.headers.origin;
     if (origin && origin !== VIEWER_ORIGIN) {
-      res.writeHead(403, { "cache-control": "no-store" });
+      res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store" });
       return res.end(JSON.stringify({ error: "Origin not allowed" }));
     }
     const params = new URL(req.url, "http://localhost").searchParams;
