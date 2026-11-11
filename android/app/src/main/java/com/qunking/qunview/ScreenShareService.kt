@@ -12,6 +12,10 @@ import android.os.IBinder
 import android.util.Log
 
 class ScreenShareService : Service() {
+    companion object {
+        @Volatile var isActive = false
+            private set
+    }
     private var streamer: WebRtcScreenStreamer? = null
     @Volatile private var viewerRequestPending = false
     @Volatile private var remoteControlRequestPending = false
@@ -41,6 +45,7 @@ class ScreenShareService : Service() {
             }
         }
         createNotificationChannels()
+        isActive = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, buildNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
@@ -175,6 +180,7 @@ class ScreenShareService : Service() {
     }
 
     override fun onDestroy() {
+        isActive = false
         clearViewerRequest()
         clearSavedViewerLink()
         streamer?.stop()
