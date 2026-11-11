@@ -18,7 +18,7 @@ class ScreenShareService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP_SHARING -> { clearViewerRequest(); streamer?.stop(); streamer = null; stopSelf(); return START_NOT_STICKY }
+            ACTION_STOP_SHARING -> { clearViewerRequest(); clearSavedViewerLink(); streamer?.stop(); streamer = null; stopSelf(); return START_NOT_STICKY }
             ACTION_APPROVE_VIEWER -> {
                 if (viewerRequestPending) {
                     clearViewerRequest()
@@ -79,7 +79,7 @@ class ScreenShareService : Service() {
             onViewerRequest = { showViewerRequestNotification() },
             onRemoteControlRequest = { showRemoteControlRequestNotification(); sendBroadcast(Intent(ACTION_REMOTE_CONTROL_REQUEST).setPackage(packageName)) },
             onViewerLeft = { clearViewerRequest() },
-            onStopped = { clearViewerRequest(); stopSelf() }
+            onStopped = { clearViewerRequest(); clearSavedViewerLink(); stopSelf() }
         )
         try {
             streamer?.start()
@@ -132,6 +132,10 @@ class ScreenShareService : Service() {
                 .addAction(android.R.drawable.ic_delete, "Disable controls", disable).build())
     }
 
+    private fun clearSavedViewerLink() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().remove(PENDING_VIEWER_LINK).apply()
+    }
+
     private fun clearRemoteControlRequest() {
         remoteControlRequestPending = false
         getSystemService(NotificationManager::class.java).cancel(CONTROL_REQUEST_NOTIFICATION_ID)
@@ -172,6 +176,7 @@ class ScreenShareService : Service() {
 
     override fun onDestroy() {
         clearViewerRequest()
+        clearSavedViewerLink()
         streamer?.stop()
         streamer = null
         stopForeground(STOP_FOREGROUND_REMOVE)
