@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val title = TextView(this).apply {
-            text = "QunView\n\nShare your screen only when you choose. Android will ask for screen-sharing permission each time. Remote assistance (tap and swipe) is optional and requires a separate Accessibility setting."
+            text = "QunView\n\nShare your screen only when you choose. Android asks when a new screen-capture session starts. A temporary network reconnect should not ask again while this session remains active. Remote assistance (tap and swipe) is optional and requires a separate Accessibility setting."
             textSize = 18f
             setPadding(24, 24, 24, 24)
         }
@@ -211,6 +211,9 @@ class MainActivity : ComponentActivity() {
         if (!stored.isNullOrBlank()) {
             savedViewerLink = stored
             shareLinkButton?.isEnabled = true
+        } else {
+            savedViewerLink = null
+            shareLinkButton?.isEnabled = false
         }
     }
 
