@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "signaling/**"
+      - "viewer/**"
       - ".github/workflows/signaling-tests.yml"
   pull_request:
     paths:
@@ -25,3 +26,5 @@ jobs:
       - name: Run signaling tests
         working-directory: signaling
         run: npm test
+      - name: Check viewer JavaScript syntax
+        run: node --check viewer/viewer.js
