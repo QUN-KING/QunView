@@ -1,0 +1,27 @@
+name: Signaling tests
+
+on:
+  push:
+    paths:
+      - "signaling/**"
+      - ".github/workflows/signaling-tests.yml"
+  pull_request:
+    paths:
+      - "signaling/**"
+      - ".github/workflows/signaling-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  signaling-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install signaling dependencies
+        working-directory: signaling
+        run: npm install
+      - name: Run signaling tests
+        working-directory: signaling
+        run: npm test
