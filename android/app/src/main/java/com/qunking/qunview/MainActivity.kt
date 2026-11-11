@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
             addAction(ScreenShareService.ACTION_SESSION_READY)
             addAction(ScreenShareService.ACTION_ERROR)
             addAction(ScreenShareService.ACTION_VIEWER_REQUEST)
+            addAction(ScreenShareService.ACTION_REMOTE_CONTROL_REQUEST)
         }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(serviceEvents, filter, Context.RECEIVER_NOT_EXPORTED)
         else {
