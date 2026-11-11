@@ -408,9 +408,7 @@ class WebRtcScreenStreamer(
     }
 
     private fun stopPeerOnly() {
-        val hadRemoteControlState = remoteControlApproved || remoteControlRequestPending
         revokeRemoteControlApproval()
-        if (hadRemoteControlState) onRemoteControlRevoked()
         controlChannel?.unregisterObserver()
         controlChannel?.close()
         controlChannel?.dispose()
