@@ -13,6 +13,16 @@ import android.util.Log
 
 class ScreenShareService : Service() {
     private var streamer: WebRtcScreenStreamer? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        activeInstance = this
+    }
+
+    fun revokeRemoteControlForAccessibilityChange() {
+        clearRemoteControlRequest()
+        streamer?.denyRemoteControl()
+    }
     @Volatile private var viewerRequestPending = false
     @Volatile private var remoteControlRequestPending = false
 
@@ -176,6 +186,7 @@ class ScreenShareService : Service() {
     }
 
     override fun onDestroy() {
+        if (activeInstance === this) activeInstance = null
         isActive = false
         clearViewerRequest()
         clearSavedViewerLink()
@@ -218,6 +229,12 @@ class ScreenShareService : Service() {
     }
 
     companion object {
+        @Volatile private var activeInstance: ScreenShareService? = null
+
+        fun revokeRemoteControlForAccessibilityChange() {
+            activeInstance?.revokeRemoteControlForAccessibilityChange()
+        }
+
         @Volatile var isActive = false
             private set
 
