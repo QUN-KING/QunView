@@ -41,10 +41,28 @@ test("rejects responses without a TURN relay URL", async () => {
     requestCloudflareIceServers({
       keyId: "key",
       apiToken: "token",
-      fetchImpl: async () => ({ ok: true, json: async () => ({ iceServers: [{ urls: ["stun:stun.cloudflare.com:3478"] }] }) })
+      fetchImpl: async () => ({ ok: true, json: async () => ({ iceServers: [{ urls: ["stun:stun.cloudflare.com:3478"], username: "user", credential: "pass" }] }) })
     }),
-    /no TURN relay server/
+    /no usable TURN relay credentials/
   );
+});
+
+test("rejects TURN URLs without temporary authentication credentials", async () => {
+  const invalidResponses = [
+    { urls: ["turn:turn.cloudflare.com:3478"], username: "", credential: "password" },
+    { urls: ["turns:turn.cloudflare.com:5349"], username: "temporary-user", credential: "" },
+    { urls: ["turn:turn.cloudflare.com:3478"], username: 123, credential: "password" }
+  ];
+  for (const iceServer of invalidResponses) {
+    await assert.rejects(
+      requestCloudflareIceServers({
+        keyId: "key",
+        apiToken: "token",
+        fetchImpl: async () => ({ ok: true, json: async () => ({ iceServers: [iceServer] }) })
+      }),
+      /no usable TURN relay credentials/
+    );
+  }
 });
 
 test("does not call Cloudflare without both server credentials", async () => {
