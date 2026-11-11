@@ -69,6 +69,13 @@ class MainActivity : ComponentActivity() {
             text = "Enable optional remote assistance"
             setOnClickListener { openAccessibilitySettings() }
         }
+        val stopButton = Button(this).apply {
+            text = "Stop screen sharing"
+            setOnClickListener {
+                startService(Intent(this@MainActivity, ScreenShareService::class.java)
+                    .setAction(ScreenShareService.ACTION_STOP_SHARING))
+            }
+        }
         val status = TextView(this).apply {
             text = "Screen-only sharing works without Accessibility permission."
             textSize = 14f
@@ -79,6 +86,7 @@ class MainActivity : ComponentActivity() {
             setPadding(20, 20, 20, 20)
             addView(title)
             addView(shareButton)
+            addView(stopButton)
             addView(accessibilityButton)
             addView(status)
         })
