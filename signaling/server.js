@@ -30,6 +30,13 @@ function tokenMatches(expected, supplied) {
   const b = Buffer.from(supplied);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+function touchSession(id, session) {
+  if (!session || sessions.get(id) !== session) return;
+  session.lastActivityAt = Date.now();
+  clearTimeout(session.timer);
+  session.timer = setTimeout(() => cleanSession(id), SESSION_TTL_MS);
+  if (typeof session.timer.unref === "function") session.timer.unref();
+}
 function cleanSession(id) {
   const session = sessions.get(id);
   if (!session) return;
@@ -52,6 +59,14 @@ wss.on("connection", (socket, request) => {
     socket.close(1008, "Origin not allowed");
     return;
   }
+  socket.isAlive = true;
+  socket.on("pong", () => {
+    socket.isAlive = true;
+    const id = socket.sessionId;
+    const session = id && sessions.get(id);
+    // A live sender keeps its sharing session alive. Viewer-only tabs do not.
+    if (session && socket.role === "sender" && session.sender === socket) touchSession(id, session);
+  });
   socket.messageWindowStartedAt = Date.now();
   socket.messageCount = 0;
 
@@ -79,18 +94,18 @@ wss.on("connection", (socket, request) => {
       const id = randomBytes(16).toString("hex");
       const resumeToken = randomBytes(32).toString("hex");
       const viewerToken = randomBytes(32).toString("hex");
-      const session = { clients: new Set([socket]), createdAt: Date.now(), sender: socket, viewer: null, approved: false, resumeToken, viewerToken };
+      const session = { clients: new Set([socket]), createdAt: Date.now(), lastActivityAt: Date.now(), sender: socket, viewer: null, approved: false, resumeToken, viewerToken };
       sessions.set(id, session);
       socket.sessionId = id;
       socket.role = "sender";
-      session.timer = setTimeout(() => cleanSession(id), SESSION_TTL_MS);
+      touchSession(id, session);
       return send(socket, { type: "session-created", sessionId: id, resumeToken, viewerToken, expiresInSeconds: SESSION_TTL_MS / 1000 });
     }
 
     if (msg.type === "resume-session") {
       const id = typeof msg.sessionId === "string" ? msg.sessionId : "";
       const session = sessions.get(id);
-      if (!session || !tokenMatches(session.resumeToken, msg.resumeToken) || Date.now() - session.createdAt > SESSION_TTL_MS) {
+      if (!session || !tokenMatches(session.resumeToken, msg.resumeToken) || Date.now() - session.lastActivityAt > SESSION_TTL_MS) {
         return send(socket, { type: "error", message: "Session cannot be resumed" });
       }
       if (session.sender && session.sender.readyState === WebSocket.OPEN) {
@@ -98,6 +113,7 @@ wss.on("connection", (socket, request) => {
       }
       session.sender = socket;
       session.approved = false;
+      touchSession(id, session);
       session.clients.add(socket);
       socket.sessionId = id;
       socket.role = "sender";
@@ -110,7 +126,7 @@ wss.on("connection", (socket, request) => {
       if (socket.sessionId) return send(socket, { type: "error", message: "This connection already joined a session" });
       const id = typeof msg.sessionId === "string" ? msg.sessionId : "";
       const session = sessions.get(id);
-      if (!session || !tokenMatches(session.viewerToken, msg.viewerToken) || Date.now() - session.createdAt > SESSION_TTL_MS) {
+      if (!session || !tokenMatches(session.viewerToken, msg.viewerToken) || Date.now() - session.lastActivityAt > SESSION_TTL_MS) {
         return send(socket, { type: "error", message: "Session not found or viewer link is invalid" });
       }
       if (!session.sender || session.sender.readyState !== WebSocket.OPEN) {
@@ -121,6 +137,7 @@ wss.on("connection", (socket, request) => {
       }
       session.viewer = socket;
       session.approved = false;
+      touchSession(id, session);
       session.clients.add(socket);
       socket.sessionId = id;
       socket.role = "viewer";
@@ -131,6 +148,7 @@ wss.on("connection", (socket, request) => {
     const id = socket.sessionId;
     const session = id && sessions.get(id);
     if (!session || !session.clients.has(socket)) return send(socket, { type: "error", message: "Join a session first" });
+    touchSession(id, session);
 
     if (msg.type === "approve-viewer" || msg.type === "deny-viewer") {
       if (socket.role !== "sender") return send(socket, { type: "error", message: "Only the sender can decide viewer access" });
@@ -187,9 +205,12 @@ wss.on("connection", (socket, request) => {
     if (!session) return;
     session.clients.delete(socket);
     if (socket.role === "sender") {
-      session.sender = null;
-      session.approved = false;
-      if (session.viewer) send(session.viewer, { type: "sender-disconnected" });
+      if (session.sender === socket) {
+        session.sender = null;
+        session.approved = false;
+        if (session.viewer) send(session.viewer, { type: "sender-disconnected" });
+      }
+      if (session.clients.size === 0) cleanSession(id);
       return;
     }
     if (socket.role === "viewer" && session.viewer === socket) {
@@ -200,6 +221,18 @@ wss.on("connection", (socket, request) => {
     if (session.clients.size === 0) cleanSession(id);
   });
 });
+
+const heartbeatTimer = setInterval(() => {
+  for (const socket of wss.clients) {
+    if (socket.isAlive === false) {
+      socket.terminate();
+      continue;
+    }
+    socket.isAlive = false;
+    socket.ping();
+  }
+}, 25000);
+if (typeof heartbeatTimer.unref === "function") heartbeatTimer.unref();
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`QunView signaling server listening on ${PORT}`);
