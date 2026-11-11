@@ -26,7 +26,7 @@ class ScreenShareService : Service() {
                 }
                 return START_NOT_STICKY
             }
-            ACTION_APPROVE_REMOTE_CONTROL -> { clearRemoteControlRequest(); streamer?.approveRemoteControl(); return START_NOT_STICKY }
+            ACTION_APPROVE_REMOTE_CONTROL -> { clearRemoteControlRequest(); streamer?.approveRemoteControl(); showRemoteControlActiveNotification(); return START_NOT_STICKY }
             ACTION_DENY_REMOTE_CONTROL -> { clearRemoteControlRequest(); streamer?.denyRemoteControl(); return START_NOT_STICKY }
             ACTION_DENY_VIEWER -> {
                 if (viewerRequestPending) {
@@ -110,6 +110,22 @@ class ScreenShareService : Service() {
                 .setSmallIcon(android.R.drawable.ic_menu_view).setOngoing(true)
                 .addAction(android.R.drawable.checkbox_on_background, "Allow controls", allow)
                 .addAction(android.R.drawable.ic_delete, "Deny", deny).build())
+    }
+
+    private fun showRemoteControlActiveNotification() {
+        val disable = PendingIntent.getService(this, 47,
+            Intent(this, ScreenShareService::class.java).setAction(ACTION_DENY_REMOTE_CONTROL),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            Notification.Builder(this, REQUEST_CHANNEL_ID) else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(this)
+            }
+        getSystemService(NotificationManager::class.java).notify(CONTROL_REQUEST_NOTIFICATION_ID,
+            builder.setContentTitle("QunView: Remote controls are ON")
+                .setContentText("Tap Disable controls to revoke remote assistance immediately.")
+                .setSmallIcon(android.R.drawable.ic_menu_view).setOngoing(true)
+                .addAction(android.R.drawable.ic_delete, "Disable controls", disable).build())
     }
 
     private fun clearRemoteControlRequest() {
