@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
                     AlertDialog.Builder(this@MainActivity).setTitle("QunView").setMessage(message).setPositiveButton("OK", null).show()
                 }
                 ScreenShareService.ACTION_VIEWER_REQUEST -> showViewerApproval()
+                ScreenShareService.ACTION_REMOTE_CONTROL_REQUEST -> showRemoteControlApproval()
             }
         }
     }
@@ -117,6 +118,21 @@ class MainActivity : ComponentActivity() {
             .setCancelable(false)
             .setPositiveButton("Allow") { _, _ -> startService(Intent(this, ScreenShareService::class.java).setAction(ScreenShareService.ACTION_APPROVE_VIEWER)) }
             .setNegativeButton("Deny") { _, _ -> startService(Intent(this, ScreenShareService::class.java).setAction(ScreenShareService.ACTION_DENY_VIEWER)) }
+            .show()
+    }
+
+    private fun showRemoteControlApproval() {
+        if (isFinishing || isDestroyed) return
+        AlertDialog.Builder(this)
+            .setTitle("Remote control request")
+            .setMessage("The viewer wants to tap, swipe, Back or Home on this phone. Allow only if you trust this person. You can disable controls from the QunView notification at any time.")
+            .setCancelable(false)
+            .setPositiveButton("Allow controls") { _, _ ->
+                startService(Intent(this, ScreenShareService::class.java).setAction(ScreenShareService.ACTION_APPROVE_REMOTE_CONTROL))
+            }
+            .setNegativeButton("Deny") { _, _ ->
+                startService(Intent(this, ScreenShareService::class.java).setAction(ScreenShareService.ACTION_DENY_REMOTE_CONTROL))
+            }
             .show()
     }
 
