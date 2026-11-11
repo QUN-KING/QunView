@@ -1,6 +1,7 @@
 package com.qunking.qunview
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.view.accessibility.AccessibilityEvent
