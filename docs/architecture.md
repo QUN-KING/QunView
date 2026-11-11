@@ -11,7 +11,7 @@ QunView consists of:
 
 - Android screen-capture consent is required for each new capture session. The app does not attempt to bypass Android's permission dialog.
 - The active capture session remains alive while a viewer disconnects and reconnects, when Android keeps the sender service running.
-- Each new viewer connection requires the sender's Allow decision.
+- A new viewer connection requires the sender's Allow decision. If the same viewer WebSocket stays connected while the sender briefly reconnects, its existing viewing approval is retained; remote-control approval is always reset.
 - Viewer requests appear as one Android notification with Allow and Deny actions, including when the app UI is not open.
 - A separate ongoing foreground-service notification provides Stop sharing.
 - Notification delivery depends on Android notification permission and device notification settings.
