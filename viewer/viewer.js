@@ -31,7 +31,7 @@ async function connectViewer(){
  ws.onerror=()=>setStatus("Signaling error. Reconnecting…");ws.onclose=event=>{if(!viewerClosing&&attempt===connectionAttempt&&event.code!==1000&&event.code!==1008)scheduleViewerReconnect()};
 }
 backBtn.onclick=()=>sendControl({action:"back"});homeBtn.onclick=()=>sendControl({action:"home"});
-helpBtn.onclick=()=>{if(controlEnabled){controlEnabled=false;helpBtn.textContent="Request remote help";setStatus("Remote help paused on viewer")}else requestRemoteControl()};
+helpBtn.onclick=()=>{if(controlEnabled){sendControl({action:"release-control"});controlEnabled=false;controlPending=false;helpBtn.textContent="Request remote help";setStatus("Remote help paused and permission released")}else requestRemoteControl()};
 screenArea.addEventListener("pointerdown",e=>{if(!controlEnabled||!video.classList.contains("active"))return;const r=video.getBoundingClientRect();touchStart={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height,time:Date.now()}});
 screenArea.addEventListener("pointerup",e=>{if(!touchStart||!controlEnabled)return;const r=video.getBoundingClientRect(),x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y=Math.max(0,Math.min(1,(e.clientY-r.top)/r.height));const dx=x-touchStart.x,dy=y-touchStart.y;if(Math.abs(dx)+Math.abs(dy)<0.035)sendControl({action:"tap",x:touchStart.x,y:touchStart.y});else sendControl({action:"swipe",x1:touchStart.x,y1:touchStart.y,x2:x,y2:y});touchStart=null});
 window.addEventListener("beforeunload",()=>{viewerClosing=true;if(reconnectTimer)clearTimeout(reconnectTimer);if(peerDisconnectTimer)clearTimeout(peerDisconnectTimer);if(socket&&socket.readyState===WebSocket.OPEN)socket.close();if(peer)peer.close()});
