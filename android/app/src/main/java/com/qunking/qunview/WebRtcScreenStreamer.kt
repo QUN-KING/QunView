@@ -190,7 +190,15 @@ class WebRtcScreenStreamer(
         controlChannel = peer?.createDataChannel("qunview-control", DataChannel.Init())
         controlChannel?.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) {}
-            override fun onStateChange() {}
+            override fun onStateChange() {
+                if (controlChannel?.state() == DataChannel.State.CLOSED ||
+                    controlChannel?.state() == DataChannel.State.CLOSING) {
+                    // A lost remote-control channel revokes the prior approval.
+                    // A reconnected viewer must request and receive fresh owner consent.
+                    remoteControlApproved = false
+                    remoteControlRequestPending = false
+                }
+            }
             override fun onMessage(buffer: DataChannel.Buffer) {
                 if (!buffer.binary && buffer.data.remaining() <= 1024) {
                     try {
