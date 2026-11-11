@@ -90,6 +90,7 @@ class ScreenShareService : Service() {
             onViewerRequest = { showViewerRequestNotification() },
             onRemoteControlRequest = { showRemoteControlRequestNotification(); sendBroadcast(Intent(ACTION_REMOTE_CONTROL_REQUEST).setPackage(packageName)) },
             onViewerLeft = { clearViewerRequest() },
+            onRemoteControlRevoked = { clearRemoteControlRequest() },
             onStopped = { clearViewerRequest(); clearSavedViewerLink(); stopSelf() }
         )
         try {
