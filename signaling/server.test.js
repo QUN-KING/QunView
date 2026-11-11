@@ -92,6 +92,8 @@ test("session creation, viewer approval and signaling relay are enforced", async
   assert.match(created.viewerToken, /^[a-f0-9]{64}$/);
   const invalidTurn = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}&token=wrong`);
   assert.equal(invalidTurn.status, 403);
+  const wrongMethod = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}&token=${created.resumeToken}`, { method: "POST" });
+  assert.equal(wrongMethod.status, 405);
   const turnResponse = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}&token=${created.resumeToken}`);
   assert.equal(turnResponse.status, 200);
   const turnConfig = await turnResponse.json();
