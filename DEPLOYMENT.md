@@ -30,7 +30,7 @@ Then build and test the Android app.
 
 ## 4. Important before public use
 
-- Configure a TURN relay with credentials for networks where direct WebRTC connectivity fails. The current app only has a public STUN server.
+- Configure a TURN relay for networks where direct WebRTC connectivity fails. Set Render environment variables `TURN_URLS` (comma-separated `turn:`/`turns:` URLs) and `TURN_SHARED_SECRET` (the TURN REST API shared secret configured on your coturn/provider). The signaling service issues session-token-protected, 10-minute HMAC-SHA1 credentials to the sender and viewer. If these variables are absent, the app safely falls back to STUN only. Do not put the shared secret in the Android app or viewer website.
 - The signaling service currently uses random private session/viewer/resume tokens, timing-safe token comparison, a viewer-origin allowlist, an 80-message-per-10-second per-socket limit, and a 64 KB WebSocket payload limit. These controls reduce casual misuse but are not a substitute for a full production security review and monitoring.
 - Use only HTTPS/WSS. Do not put long-lived secrets in the Android app or viewer URL.
 - Verify Android MediaProjection consent, foreground notification behavior, stop/revoke handling, and app uninstall behavior on real devices.
@@ -45,5 +45,5 @@ QunView does not record or save screen video. Optional remote assistance (Back, 
 - While a capture session remains active, a viewer can reconnect without restarting screen capture. The sender must approve the viewer connection again.
 - The sender receives a single Allow/Deny notification for a pending viewer request and a separate ongoing Stop sharing notification.
 - Android notification permission, channel settings, Do Not Disturb, and manufacturer battery restrictions can affect notification delivery.
-- Current WebRTC configuration uses STUN only. Some networks may require a TURN relay, which is not configured in this free deployment.
+- TURN support is implemented but remains optional until a TURN provider/server is configured. The current free Render blueprint does not provision a TURN relay; without the two environment variables, connections use STUN only.
 - Do not distribute as production-ready until two-device testing covers approval, denial, background notifications, stop, reconnect, and optional remote assistance.
