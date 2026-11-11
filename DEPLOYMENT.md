@@ -45,7 +45,7 @@ QunView does not record or save screen video. Optional remote assistance (Back, 
 - While a capture session remains active, a viewer can reconnect without restarting screen capture. The sender must approve the viewer connection again.
 - The sender receives a single Allow/Deny notification for a pending viewer request and a separate ongoing Stop sharing notification.
 - Android notification permission, channel settings, Do Not Disturb, and manufacturer battery restrictions can affect notification delivery.
-- TURN support is implemented but remains optional until Cloudflare Realtime TURN (or a separately operated coturn server) is configured. The current free Render blueprint does not provision a TURN relay; without provider credentials, connections use STUN only. Cloudflare Realtime TURN includes 1,000 GB/month free egress, then $0.05/GB; monitor Cloudflare usage and billing.
+- TURN support is implemented but remains optional until Cloudflare Realtime TURN (or a separately operated coturn server) is configured. The current free Render blueprint does not provision a TURN relay; without provider credentials, connections use STUN only. Cloudflare Realtime TURN is billed at $0.05 per real-time GB of outbound traffic when used independently. It is free when used together with Cloudflare Realtime SFU. QunView currently uses peer-to-peer WebRTC and its own signaling service, not Realtime SFU, so budget for TURN egress charges and monitor usage; do not assume a 1,000 GB/month free allowance.
 - Do not distribute as production-ready until two-device testing covers approval, denial, background notifications, stop, reconnect, and optional remote assistance.
 
 
