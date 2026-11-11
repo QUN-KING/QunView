@@ -51,8 +51,25 @@ class QunViewAccessibilityService : AccessibilityService() {
         instance = this
     }
 
-    override fun onDestroy() {
+    override fun onServiceDisconnected() {
+        revokeActiveRemoteControl()
+        super.onServiceDisconnected()
+    }
+
+    private fun revokeActiveRemoteControl() {
         if (instance === this) instance = null
+        try {
+            applicationContext.startService(
+                Intent(applicationContext, ScreenShareService::class.java)
+                    .setAction(ScreenShareService.ACTION_DENY_REMOTE_CONTROL)
+            )
+        } catch (_: IllegalStateException) {
+            // Android may already be tearing down the app process.
+        }
+    }
+
+    override fun onDestroy() {
+        revokeActiveRemoteControl()
         super.onDestroy()
     }
 }
