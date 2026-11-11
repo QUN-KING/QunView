@@ -334,13 +334,13 @@ class WebRtcScreenStreamer(
                 }
                 "viewer-denied-by-sender" -> {
                     viewerApproved = false
+                    revokeRemoteControlApproval()
                     stopPeerOnly()
                     pendingRemoteIce.clear()
                 }
                 "viewer-left" -> {
                     viewerApproved = false
-                    remoteControlApproved = false
-                    remoteControlRequestPending = false
+                    revokeRemoteControlApproval()
                     stopPeerOnly()
                     pendingRemoteIce.clear()
                     onViewerLeft()
