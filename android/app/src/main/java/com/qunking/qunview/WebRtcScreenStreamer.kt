@@ -271,7 +271,10 @@ class WebRtcScreenStreamer(
     }
 
     private fun revokeRemoteControlAndNotify() {
-        revokeRemoteControlAndNotify()
+        val hadRemoteControlState = remoteControlApproved || remoteControlRequestPending
+        revokeRemoteControlApproval()
+        if (hadRemoteControlState) onRemoteControlRevoked()
+        sendControlReply("control-denied")
     }
 
     private fun sendControlReply(action: String) {
