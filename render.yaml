@@ -10,6 +10,10 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_SHARED_SECRET
+        sync: false
   - type: web
     name: qunview-viewer
     runtime: static
