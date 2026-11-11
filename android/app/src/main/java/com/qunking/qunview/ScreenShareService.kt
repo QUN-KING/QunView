@@ -88,6 +88,7 @@ class ScreenShareService : Service() {
         viewerRequestPending = true
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(VIEWER_REQUEST_NOTIFICATION_ID, buildViewerRequestNotification())
+        sendBroadcast(Intent(ACTION_VIEWER_REQUEST).setPackage(packageName))
     }
 
     private fun clearViewerRequest() {
