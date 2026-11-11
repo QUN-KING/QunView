@@ -104,6 +104,7 @@ wss.on("connection", (socket, request) => {
     }
 
     if (msg.type === "resume-session") {
+      if (socket.sessionId) return send(socket, { type: "error", message: "This connection already belongs to a session" });
       const id = typeof msg.sessionId === "string" ? msg.sessionId : "";
       const session = sessions.get(id);
       if (!session || !tokenMatches(session.resumeToken, msg.resumeToken) || Date.now() - session.lastActivityAt > SESSION_TTL_MS) {
