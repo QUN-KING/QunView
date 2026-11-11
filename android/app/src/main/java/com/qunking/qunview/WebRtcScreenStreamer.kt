@@ -217,17 +217,14 @@ class WebRtcScreenStreamer(
     }
 
     @Synchronized fun approveRemoteControl(): Boolean {
-        if (stopped || !viewerApproved || QunViewAccessibilityService.instance == null) {
-            sendControlReply("control-denied")
-            return false
-        }
-        remoteControlRequestPending = false
-        approvedAccessibilityService = QunViewAccessibilityService.instance
-        if (approvedAccessibilityService == null) {
+        val accessibilityService = QunViewAccessibilityService.instance
+        if (stopped || !viewerApproved || accessibilityService == null) {
             revokeRemoteControlApproval()
             sendControlReply("control-denied")
             return false
         }
+        remoteControlRequestPending = false
+        approvedAccessibilityService = accessibilityService
         remoteControlApproved = true
         sendControlReply("control-approved")
         return true
@@ -298,8 +295,7 @@ class WebRtcScreenStreamer(
                 }
                 "viewer-join-request" -> {
                     viewerApproved = false
-                    remoteControlApproved = false
-                    remoteControlRequestPending = false
+                    revokeRemoteControlApproval()
                     stopPeerOnly()
                     pendingRemoteIce.clear()
                     onViewerRequest()
