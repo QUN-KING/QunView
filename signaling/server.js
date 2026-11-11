@@ -137,7 +137,6 @@ wss.on("connection", (socket, request) => {
       }
       session.viewer = socket;
       session.approved = false;
-      touchSession(id, session);
       session.clients.add(socket);
       socket.sessionId = id;
       socket.role = "viewer";
@@ -148,7 +147,7 @@ wss.on("connection", (socket, request) => {
     const id = socket.sessionId;
     const session = id && sessions.get(id);
     if (!session || !session.clients.has(socket)) return send(socket, { type: "error", message: "Join a session first" });
-    touchSession(id, session);
+    if (socket.role === "sender" && session.sender === socket) touchSession(id, session);
 
     if (msg.type === "approve-viewer" || msg.type === "deny-viewer") {
       if (socket.role !== "sender") return send(socket, { type: "error", message: "Only the sender can decide viewer access" });
