@@ -162,7 +162,7 @@ class WebRtcScreenStreamer(
         observedControlChannel?.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) {}
             override fun onStateChange() {
-                if (controlChannel === observedControlChannel &&
+                if (observedControlChannel != null && controlChannel === observedControlChannel &&
                     (observedControlChannel.state() == DataChannel.State.CLOSED ||
                      observedControlChannel.state() == DataChannel.State.CLOSING)) {
                     revokeRemoteControlApproval()
