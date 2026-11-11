@@ -5,7 +5,7 @@ QunView consists of:
 - **Android sender app:** requests Android MediaProjection consent and streams the screen while the device owner chooses to share.
 - **Viewer website:** displays the live stream in a browser. The viewer can request optional Back, Home, tap, and swipe assistance.
 - **Signaling service:** creates private sessions, authenticates the sender and viewer with random tokens, and relays WebRTC setup messages.
-- **WebRTC:** carries the live screen peer-to-peer using encrypted transport. Google STUN is configured; a TURN relay is not currently configured.
+- **WebRTC:** carries the live screen peer-to-peer using encrypted transport. Google STUN is configured. TURN integration is excluded from the free-only plan.
 
 ## Consent and notifications
 
@@ -25,7 +25,7 @@ QunView consists of:
 
 ## Current limitations
 
-- STUN-only connectivity may fail on some carrier or restrictive NAT networks. A TURN service would be needed for broader connectivity.
+- STUN-only connectivity may fail on some carrier or restrictive NAT networks. Some restrictive networks may not connect; the project intentionally remains STUN-only to avoid paid infrastructure.
 - Render free services may sleep while idle, delaying initial signaling.
 - Real-device testing on two Android phones is required before describing the app as production-ready.
 
