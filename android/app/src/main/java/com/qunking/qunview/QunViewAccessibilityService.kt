@@ -52,9 +52,9 @@ class QunViewAccessibilityService : AccessibilityService() {
         instance = this
     }
 
-    override fun onServiceDisconnected() {
+    override fun onUnbind(intent: Intent?): Boolean {
         revokeActiveRemoteControl()
-        super.onServiceDisconnected()
+        return super.onUnbind(intent)
     }
 
     private fun revokeActiveRemoteControl() {
