@@ -135,6 +135,10 @@ wss.on("connection", (socket, request) => {
       if (session.viewer && session.viewer.readyState === WebSocket.OPEN) {
         return send(socket, { type: "error", message: "Session already has a viewer" });
       }
+      // A session is strictly one sender plus at most one viewer.
+      if (session.clients.size >= MAX_CLIENTS_PER_SESSION) {
+        return send(socket, { type: "error", message: "Session is full" });
+      }
       session.viewer = socket;
       session.approved = false;
       session.clients.add(socket);
