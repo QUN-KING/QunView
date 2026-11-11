@@ -208,7 +208,7 @@ class MainActivity : ComponentActivity() {
     private fun refreshSavedViewerLink() {
         val stored = getSharedPreferences(ScreenShareService.PREFS_NAME, MODE_PRIVATE)
             .getString(ScreenShareService.PENDING_VIEWER_LINK, null)
-        if (!stored.isNullOrBlank()) {
+        if (ScreenShareService.isActive && !stored.isNullOrBlank()) {
             savedViewerLink = stored
             shareLinkButton?.isEnabled = true
         } else {
