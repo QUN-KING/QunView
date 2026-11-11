@@ -90,10 +90,13 @@ test("session creation, viewer approval and signaling relay are enforced", async
   assert.match(created.sessionId, /^[a-f0-9]{32}$/);
   assert.match(created.resumeToken, /^[a-f0-9]{64}$/);
   assert.match(created.viewerToken, /^[a-f0-9]{64}$/);
-  const invalidTurn = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}&token=wrong`);
+  const invalidTurn = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}`);
   assert.equal(invalidTurn.status, 403);
-  const wrongMethod = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}&token=${created.resumeToken}`, { method: "POST" });
+  const wrongMethod = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}`, { method: "POST" });
   assert.equal(wrongMethod.status, 405);
+  const preflight = await fetch(`${baseUrl}/turn-credentials`, { method: "OPTIONS", headers: { Origin: "https://qunview-viewer.onrender.com", "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "authorization" } });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get("access-control-allow-origin"), "https://qunview-viewer.onrender.com");
   const turnResponse = await fetch(`${baseUrl}/turn-credentials?sessionId=${created.sessionId}`, { headers: { Authorization: `Bearer ${created.resumeToken}` } });
   assert.equal(turnResponse.status, 200);
   const turnConfig = await turnResponse.json();
