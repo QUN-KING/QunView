@@ -19,11 +19,16 @@ async function requestCloudflareIceServers({ keyId, apiToken, fetchImpl = fetch 
   );
   if (!response.ok) throw new Error("Cloudflare TURN credential request failed");
   const payload = await response.json();
-  if (!payload || !Array.isArray(payload.iceServers) ||
-      !payload.iceServers.some(item =>
-        item && (Array.isArray(item.urls) ? item.urls : [item.urls]).some(url =>
-          typeof url === "string" && (url.startsWith("turn:") || url.startsWith("turns:"))))) {
-    throw new Error("Cloudflare returned no TURN relay server");
+  const hasUsableTurnServer = payload && Array.isArray(payload.iceServers) &&
+    payload.iceServers.some(item => {
+      if (!item || typeof item.username !== "string" || !item.username.trim() ||
+          typeof item.credential !== "string" || !item.credential.trim()) return false;
+      const urls = Array.isArray(item.urls) ? item.urls : [item.urls];
+      return urls.some(url =>
+        typeof url === "string" && (url.startsWith("turn:") || url.startsWith("turns:")));
+    });
+  if (!hasUsableTurnServer) {
+    throw new Error("Cloudflare returned no usable TURN relay credentials");
   }
   return payload.iceServers;
 }
