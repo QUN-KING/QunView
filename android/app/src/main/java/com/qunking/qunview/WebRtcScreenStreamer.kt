@@ -131,9 +131,41 @@ class WebRtcScreenStreamer(
         videoTrack!!.setEnabled(true)
     }
 
+    private fun fetchIceServers(): List<PeerConnection.IceServer> {
+        val servers = mutableListOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+        val id = sessionId ?: return servers
+        val token = resumeToken ?: return servers
+        try {
+            val url = SIGNALING_URL + "/turn-credentials?sessionId=" + id + "&token=" + token
+            val request = Request.Builder().url(url).header("Cache-Control", "no-cache").get().build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return servers
+                val payload = JSONObject(response.body?.string() ?: return servers)
+                val list = payload.optJSONArray("iceServers") ?: return servers
+                for (index in 0 until list.length()) {
+                    val item = list.optJSONObject(index) ?: continue
+                    val urls = item.optJSONArray("urls") ?: continue
+                    val username = item.optString("username")
+                    val credential = item.optString("credential")
+                    if (username.isBlank() || credential.isBlank()) continue
+                    for (urlIndex in 0 until urls.length()) {
+                        val turnUrl = urls.optString(urlIndex)
+                        if (turnUrl.startsWith("turn:") || turnUrl.startsWith("turns:")) {
+                            servers.add(PeerConnection.IceServer.builder(turnUrl)
+                                .setUsername(username).setPassword(credential).createIceServer())
+                        }
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "TURN configuration unavailable; using STUN only", error)
+        }
+        return servers
+    }
+
     private fun createPeer() {
         if (stopped || peer != null) return
-        val ice = listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+        val ice = fetchIceServers()
         peer = factory!!.createPeerConnection(PeerConnection.RTCConfiguration(ice).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }, object : PeerConnection.Observer {
