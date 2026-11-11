@@ -27,7 +27,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
 
-/** Sender-side WebRTC pipeline. Screen frames are never recorded or saved. */
+/** Sender-side WebRTC pipeline. Screen frames are never recorded or saved; TURN credentials are fetched per authenticated session. */
 class WebRtcScreenStreamer(
     private val context: Context,
     private val projectionPermission: Intent,
