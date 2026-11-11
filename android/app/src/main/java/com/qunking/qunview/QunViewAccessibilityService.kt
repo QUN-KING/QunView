@@ -1,7 +1,6 @@
 package com.qunking.qunview
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Intent
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.view.accessibility.AccessibilityEvent
@@ -58,14 +57,10 @@ class QunViewAccessibilityService : AccessibilityService() {
     }
 
     private fun revokeActiveRemoteControl() {
-        if (instance === this) instance = null
-        try {
-            applicationContext.startService(
-                Intent(applicationContext, ScreenShareService::class.java)
-                    .setAction(ScreenShareService.ACTION_DENY_REMOTE_CONTROL)
-            )
-        } catch (_: IllegalStateException) {
-            // Android may already be tearing down the app process.
+        if (instance === this) {
+            instance = null
+            // Revoke synchronously; Android can restrict starting background services here.
+            ScreenShareService.revokeRemoteControlForAccessibilityChange()
         }
     }
 
