@@ -16,7 +16,7 @@ Android may require a fresh screen-capture approval after the capture service/pr
 
 ## Free deployment
 
-The included Render blueprint uses free service plans. Free hosting may sleep while idle, so initial connections can be delayed. The default networking configuration uses STUN only and has no paid relay configured; some restrictive networks may not establish a direct WebRTC connection. Do not configure usage-billed services.
+The included Render blueprint uses free service plans. Free hosting may sleep while idle, so initial connections can be delayed. Networking is permanently STUN-only in this free-only plan; no TURN provider, paid relay, or billing integration is included. Some restrictive networks may not establish a direct WebRTC connection.
 
 ## Build and test
 
