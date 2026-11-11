@@ -246,15 +246,15 @@ test("a socket already joined to one session cannot resume another session", asy
   senderA.close(); senderB.close(); viewer.close();
 });
 
-test("viewer joins require the exact hosted viewer origin", async () => {
+test("viewer connections require the exact hosted viewer origin", async () => {
   const sender = await connect(wsUrl);
   const createdPromise = nextMessage(sender, m => m.type === "session-created");
   send(sender, { type: "create-session" });
   const created = await createdPromise;
   const viewer = await connect(wsUrl, "https://attacker.example");
-  const rejected = nextMessage(viewer, m => m.type === "error");
+  const closed = new Promise(resolve => viewer.once("close", (code) => resolve(code)));
   send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
-  assert.match((await rejected).message, /origin not allowed/);
+  assert.equal(await closed, 1008);
   send(sender, { type: "end-session" });
   sender.close(); viewer.close();
 });
