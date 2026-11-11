@@ -36,6 +36,7 @@ class WebRtcScreenStreamer(
     private val onViewerRequest: () -> Unit,
     private val onRemoteControlRequest: () -> Unit,
     private val onViewerLeft: () -> Unit,
+    private val onRemoteControlRevoked: () -> Unit,
     private val onStopped: () -> Unit
 ) {
     companion object {
@@ -400,6 +401,9 @@ class WebRtcScreenStreamer(
     }
 
     private fun stopPeerOnly() {
+        val hadRemoteControlState = remoteControlApproved || remoteControlRequestPending
+        revokeRemoteControlApproval()
+        if (hadRemoteControlState) onRemoteControlRevoked()
         controlChannel?.unregisterObserver()
         controlChannel?.close()
         controlChannel?.dispose()
