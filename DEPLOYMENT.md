@@ -30,7 +30,7 @@ Then build and test the Android app.
 
 ## 4. Important before public use
 
-- Configure a TURN relay for networks where direct WebRTC connectivity fails. Set Render environment variables `TURN_URLS` (comma-separated `turn:`/`turns:` URLs) and `TURN_SHARED_SECRET` (the TURN REST API shared secret configured on your coturn/provider). The signaling service issues session-token-protected, 10-minute HMAC-SHA1 credentials to the sender and viewer. If these variables are absent, the app safely falls back to STUN only. Do not put the shared secret in the Android app or viewer website.
+- Configure a TURN relay for networks where direct WebRTC connectivity fails. Set Render environment variables `TURN_URLS` (comma-separated `turn:`/`turns:` URLs) and `TURN_SHARED_SECRET` (the TURN REST API shared secret configured on your coturn/provider). The signaling service issues session-token-protected, 10-minute HMAC-SHA1 credentials to the sender and viewer. Session tokens are sent in an Authorization header, not in the TURN configuration URL. If these variables are absent, the app safely falls back to STUN only. Do not put the shared secret in the Android app or viewer website.
 - The signaling service currently uses random private session/viewer/resume tokens, timing-safe token comparison, a viewer-origin allowlist, an 80-message-per-10-second per-socket limit, and a 64 KB WebSocket payload limit. These controls reduce casual misuse but are not a substitute for a full production security review and monitoring.
 - Use only HTTPS/WSS. Do not put long-lived secrets in the Android app or viewer URL.
 - Verify Android MediaProjection consent, foreground notification behavior, stop/revoke handling, and app uninstall behavior on real devices.
