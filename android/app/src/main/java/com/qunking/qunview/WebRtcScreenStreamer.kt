@@ -194,14 +194,15 @@ class WebRtcScreenStreamer(
         sendSignal(JSONObject().put("type", "approve-viewer"))
     }
 
-    @Synchronized fun approveRemoteControl() {
+    @Synchronized fun approveRemoteControl(): Boolean {
         if (stopped || !viewerApproved || QunViewAccessibilityService.instance == null) {
             sendControlReply("control-denied")
-            return
+            return false
         }
         remoteControlRequestPending = false
         remoteControlApproved = true
         sendControlReply("control-approved")
+        return true
     }
 
     @Synchronized fun denyRemoteControl() {
