@@ -69,3 +69,16 @@ Complete this checklist on two physical Android phones before calling a release 
 - [ ] Disable the QunView Accessibility service in Android Settings and verify remote commands are revoked.
 
 Do not mark the release ready based on CI or APK creation alone.
+
+## Signed Android release APK
+
+The signed release workflow is available under GitHub Actions as **Signed Android release APK**. It can be started manually or by pushing a version tag beginning with `v`. Before running it, create a release keystore locally and keep a secure offline backup. Never commit the keystore or its passwords to this repository.
+
+Create a keystore with the alias `qunview-release`, then add these four repository Actions secrets in GitHub Settings → Secrets and variables → Actions:
+
+- `QUNVIEW_KEYSTORE_BASE64` — base64-encoded keystore file contents.
+- `QUNVIEW_KEYSTORE_PASSWORD` — keystore password.
+- `QUNVIEW_KEY_ALIAS` — `qunview-release`.
+- `QUNVIEW_KEY_PASSWORD` — key password.
+
+On Linux or Termux, encode the keystore without line breaks using `base64 -w 0 qunview-release.jks`. Do not paste the keystore or passwords into chat, issues, commits, or logs. The workflow checks the APK signature and removes its temporary keystore after the job. Without all four secrets, signed release creation intentionally fails with a clear missing-secret message; the debug APK workflow remains independent.
