@@ -2,6 +2,7 @@
 
 const http = require("node:http");
 const { randomBytes, timingSafeEqual } = require("node:crypto");
+const net = require("node:net");
 const { WebSocketServer, WebSocket } = require("ws");
 
 const PORT = Number(process.env.PORT || 8080);
@@ -20,7 +21,98 @@ const server = http.createServer(async (req, res) => {
   res.end("Not found");
 });
 
-const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
+// Render routes public traffic through Cloudflare. Trust its single-address
+// CF-Connecting-IP header only when explicitly enabled for that deployment.
+const TRUST_CF_CONNECTING_IP = process.env.TRUST_CF_CONNECTING_IP === "true";
+const CONNECTION_WINDOW_MS = 60 * 1000;
+const MAX_CONNECTIONS_PER_IP_PER_WINDOW = 60;
+const SESSION_WINDOW_MS = 10 * 60 * 1000;
+const MAX_SESSIONS_PER_IP_PER_WINDOW = 10;
+const IP_RATE_LIMIT_STATE_TTL_MS = 10 * 60 * 1000;
+const MAX_IP_RATE_LIMIT_ENTRIES = 20000;
+const ipRateLimits = new Map();
+
+function normalizeIp(value) {
+  if (typeof value !== "string") return null;
+  const ip = value.trim();
+  if (!net.isIP(ip)) return null;
+  return ip.toLowerCase().startsWith("::ffff:") ? ip.slice(7) : ip.toLowerCase();
+}
+
+function clientIpForRequest(request) {
+  if (TRUST_CF_CONNECTING_IP) {
+    const cloudflareIp = normalizeIp(request.headers["cf-connecting-ip"]);
+    if (cloudflareIp) return cloudflareIp;
+  }
+  return normalizeIp(request.socket.remoteAddress) || "unknown";
+}
+
+function pruneIpRateLimits(now = Date.now()) {
+  for (const [ip, state] of ipRateLimits) {
+    if (now - state.lastSeenAt > IP_RATE_LIMIT_STATE_TTL_MS) ipRateLimits.delete(ip);
+  }
+}
+
+function getIpRateLimitState(ip, now = Date.now()) {
+  let state = ipRateLimits.get(ip);
+  if (!state) {
+    if (ipRateLimits.size >= MAX_IP_RATE_LIMIT_ENTRIES) pruneIpRateLimits(now);
+    if (ipRateLimits.size >= MAX_IP_RATE_LIMIT_ENTRIES) return null;
+    state = {
+      lastSeenAt: now,
+      connectionWindowStartedAt: now,
+      connectionCount: 0,
+      sessionWindowStartedAt: now,
+      sessionCount: 0
+    };
+    ipRateLimits.set(ip, state);
+  }
+  state.lastSeenAt = now;
+  return state;
+}
+
+const ipRateLimitCleanupTimer = setInterval(pruneIpRateLimits, 60 * 1000);
+if (typeof ipRateLimitCleanupTimer.unref === "function") ipRateLimitCleanupTimer.unref();
+
+const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+server.on("upgrade", (request, socket, head) => {
+  let pathname;
+  try { pathname = new URL(request.url, "http://localhost").pathname; }
+  catch {
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  if (pathname !== "/") {
+    socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
+  const ip = clientIpForRequest(request);
+  const state = getIpRateLimitState(ip);
+  if (!state) {
+    socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nRetry-After: 60\r\nContent-Length: 0\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  const now = Date.now();
+  if (now - state.connectionWindowStartedAt >= CONNECTION_WINDOW_MS) {
+    state.connectionWindowStartedAt = now;
+    state.connectionCount = 0;
+  }
+  state.connectionCount += 1;
+  if (state.connectionCount > MAX_CONNECTIONS_PER_IP_PER_WINDOW) {
+    socket.write("HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\nRetry-After: 60\r\nContent-Length: 0\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(request, socket, head, (webSocket) => {
+    webSocket.clientIp = ip;
+    wss.emit("connection", webSocket, request);
+  });
+});
 
 function send(socket, payload) {
   if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
@@ -92,6 +184,17 @@ wss.on("connection", (socket, request) => {
 
     if (msg.type === "create-session") {
       if (socket.sessionId) return send(socket, { type: "error", message: "This connection already has a session" });
+      const ipState = ipRateLimits.get(socket.clientIp);
+      if (!ipState) return send(socket, { type: "error", message: "Rate limit state unavailable; reconnect and try again" });
+      const now = Date.now();
+      if (now - ipState.sessionWindowStartedAt >= SESSION_WINDOW_MS) {
+        ipState.sessionWindowStartedAt = now;
+        ipState.sessionCount = 0;
+      }
+      if (ipState.sessionCount >= MAX_SESSIONS_PER_IP_PER_WINDOW) {
+        return send(socket, { type: "error", message: "Session creation rate limit exceeded; try again later" });
+      }
+      ipState.sessionCount += 1;
       const id = randomBytes(16).toString("hex");
       const resumeToken = randomBytes(32).toString("hex");
       const viewerToken = randomBytes(32).toString("hex");

@@ -32,7 +32,7 @@ Then build and test the Android app.
 ## 4. Important before public use
 
 - The included free deployment uses Google STUN only. No paid TURN provider or billing credentials are configured. Direct peer-to-peer video works on many networks, but some restrictive networks require a TURN relay and may not connect in this free-only setup. Do not enable a service that can incur charges; if a genuinely no-cost TURN option is not available, treat those networks as unsupported rather than risking a bill.
-- The signaling service currently uses random private session/viewer/resume tokens, timing-safe token comparison, a viewer-origin allowlist, an 80-message-per-10-second per-socket limit, and a 64 KB WebSocket payload limit. These controls reduce casual misuse but are not a substitute for a full production security review and monitoring.
+- The signaling service uses random private session/viewer/resume tokens, timing-safe token comparison, a viewer-origin allowlist, a 64 KB WebSocket payload limit, an 80-message-per-10-second per-socket limit, a 60-connection-per-minute per-client-IP handshake limit, and a 10-session-per-10-minute per-client-IP creation limit. The IP limits use Cloudflare’s `CF-Connecting-IP` header only when `TRUST_CF_CONNECTING_IP=true`; otherwise the server falls back to the direct peer address. The Render blueprint enables this setting because Render routes public traffic through Cloudflare. These in-memory limits apply per running instance and are not a substitute for a distributed limiter when scaling to multiple instances.
 - Use only HTTPS/WSS. Do not put long-lived secrets in the Android app or viewer URL.
 - Verify Android MediaProjection consent, foreground notification behavior, stop/revoke handling, and app uninstall behavior on real devices.
 - Do not treat a successful APK build as proof that live screen sharing works. Test on two separate Android phones and different networks.
@@ -69,3 +69,24 @@ Complete this checklist on two physical Android phones before calling a release 
 - [ ] Disable the QunView Accessibility service in Android Settings and verify remote commands are revoked.
 
 Do not mark the release ready based on CI or APK creation alone.
+
+## Signed Android release APK
+
+The signed release workflow is available under GitHub Actions as **Signed Android release APK**. It can be started manually or by pushing a version tag beginning with `v`. Before running it, create a release keystore locally and keep a secure offline backup. Never commit the keystore or its passwords to this repository.
+
+Create a keystore with the alias `qunview-release`, then add these four repository Actions secrets in GitHub Settings → Secrets and variables → Actions:
+
+- `QUNVIEW_KEYSTORE_BASE64` — base64-encoded keystore file contents.
+- `QUNVIEW_KEYSTORE_PASSWORD` — keystore password.
+- `QUNVIEW_KEY_ALIAS` — `qunview-release`.
+- `QUNVIEW_KEY_PASSWORD` — key password.
+
+On Linux or Termux, encode the keystore without line breaks using `base64 -w 0 qunview-release.jks`. Do not paste the keystore or passwords into chat, issues, commits, or logs. The workflow checks the APK signature and removes its temporary keystore after the job. Without all four secrets, signed release creation intentionally fails with a clear missing-secret message; the debug APK workflow remains independent.
+
+## Live deployment smoke check
+
+After the Render services are deployed, run the GitHub Actions workflow **Live deployment smoke check** manually. It retries the signaling health endpoint and verifies the hosted viewer page. A successful smoke check verifies that both public web endpoints respond; it does not prove that WebRTC connects between two phones or that Android capture/notifications behave correctly.
+
+## Protecting the main branch
+
+The repository currently has no active ruleset for `main`. In GitHub, open Settings → Branches → Add branch protection rule (or Settings → Rules → Rulesets → New branch ruleset) and target `main`. Enable **Require a pull request before merging**, **Require status checks to pass before merging**, and **Block force pushes**. Select the checks `signaling-tests` and `debug-apk` as required checks, then save and confirm the rule is active. Do not require an approval count that prevents the repository owner from merging their own changes if no second reviewer is available.
