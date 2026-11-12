@@ -1,101 +1,40 @@
-// QunView browser receiver. Requires a deployed WSS signaling endpoint.
-const video = document.getElementById("remoteVideo");
-const placeholder = document.getElementById("placeholder");
-const statusText = document.getElementById("status");
-const params = new URLSearchParams(location.search);
-const sessionId = params.get("session");
-const signalingUrl = params.get("signal");
+// QunView viewer: video plus consent-based gesture assistance over WebRTC data channel.
+const video=document.getElementById("remoteVideo");
+const placeholder=document.getElementById("placeholder");
+const statusText=document.getElementById("status");
+const screenArea=document.getElementById("screenArea");
+const backBtn=document.getElementById("backBtn"),homeBtn=document.getElementById("homeBtn"),helpBtn=document.getElementById("helpBtn");
+const params=new URLSearchParams(location.search),sessionId=params.get("session"),viewerToken=params.get("key"),signalingUrl=params.get("signal");
+let iceServers=[{urls:["stun:stun.l.google.com:19302"]}];
+let socket,peer,controlChannel,pendingIceCandidates=[],viewerClosing=false,reconnectTimer=null,reconnectDelaySeconds=2,connectionAttempt=0,controlEnabled=false,controlPending=false,touchStart=null,peerDisconnectTimer=null;
+function setStatus(s){statusText.textContent=s}
+function showWaiting(s){video.srcObject=null;video.classList.remove("active");placeholder.hidden=false;setStatus(s);setControls(false)}
+function setControls(ready){backBtn.disabled=!ready||!controlEnabled;homeBtn.disabled=!ready||!controlEnabled;helpBtn.disabled=!ready||!controlChannel||controlChannel.readyState!=="open"}
+function sendControl(data){if(!controlEnabled||!controlChannel||controlChannel.readyState!=="open")return;controlChannel.send(JSON.stringify(data))}
+function requestRemoteControl(){if(!controlChannel||controlChannel.readyState!=="open"||controlPending)return;controlPending=true;helpBtn.disabled=true;helpBtn.textContent="Waiting for phone owner";controlChannel.send(JSON.stringify({action:"request-control"}));setStatus("Waiting for the phone owner to approve remote controls…")}
+function resetRemoteHelp(){controlEnabled=false;controlPending=false;helpBtn.textContent="Request remote help";setControls(false)}
 
-let socket;
-let peer;
-let pendingIceCandidates = [];
-let viewerClosing = false;
-let reconnectTimer = null;
-let reconnectDelaySeconds = 2;
-let connectionAttempt = 0;
-
-function setStatus(message) { statusText.textContent = message; }
-function showWaiting(message) { video.srcObject = null; video.classList.remove("active"); placeholder.hidden = false; setStatus(message); }
-
-function createPeer() {
-  if (peer) peer.close();
-  pendingIceCandidates = [];
-  peer = new RTCPeerConnection({ iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }] });
-  peer.ontrack = (event) => {
-    const stream = event.streams && event.streams[0]; if (!stream) return;
-    video.srcObject = stream; video.classList.add("active"); placeholder.hidden = true; setStatus("Live screen");
-    video.play().catch(() => setStatus("Video playback was blocked by the browser. Refresh the viewer page and try again."));
-  };
-  peer.onicecandidate = (event) => { if (event.candidate && socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ice-candidate", data: event.candidate })); };
-  peer.onconnectionstatechange = () => {
-    if (!peer) return;
-    if (peer.connectionState === "failed" || peer.connectionState === "disconnected") setStatus("Connection interrupted. Reconnecting automatically…");
-    else if (peer.connectionState === "connected") setStatus("Connected — waiting for video…");
-  };
+function createPeer(){
+ if(peer)peer.close();pendingIceCandidates=[];controlChannel=null;resetRemoteHelp();
+ peer=new RTCPeerConnection({iceServers});
+ peer.ondatachannel=e=>{if(e.channel.label!=="qunview-control")return;controlChannel=e.channel;controlChannel.onopen=()=>{setControls(true);setStatus("Connected — screen viewing only")};controlChannel.onmessage=event=>{let msg;try{msg=JSON.parse(event.data)}catch{return}if(msg.action==="control-approved"){controlPending=false;controlEnabled=true;helpBtn.disabled=false;helpBtn.textContent="Pause remote help";setControls(true);setStatus("Remote controls approved by phone owner")}else if(msg.action==="control-denied"){controlPending=false;controlEnabled=false;helpBtn.disabled=false;helpBtn.textContent="Request remote help";setControls(true);setStatus("Phone owner did not allow remote controls")}};controlChannel.onclose=()=>{controlEnabled=false;controlPending=false;setControls(false)};};
+ peer.ontrack=e=>{const stream=e.streams&&e.streams[0];if(!stream)return;video.srcObject=stream;video.classList.add("active");placeholder.hidden=true;setStatus("Live screen");setControls(true);video.play().catch(()=>setStatus("Tap the video to start playback."));};
+ peer.onicecandidate=e=>{if(e.candidate&&socket&&socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:"ice-candidate",data:e.candidate}))};
+ peer.onconnectionstatechange=()=>{if(!peer)return;const state=peer.connectionState;if(state==="connected"){if(peerDisconnectTimer){clearTimeout(peerDisconnectTimer);peerDisconnectTimer=null}reconnectDelaySeconds=2;setStatus("Connected — waiting for video…")}else if(state==="failed"){setStatus("Connection failed. Reconnecting…");if(socket&&socket.readyState===WebSocket.OPEN)socket.close(1011,"WebRTC connection failed")}else if(state==="disconnected"){setStatus("Connection interrupted. Checking connection…");if(peerDisconnectTimer)clearTimeout(peerDisconnectTimer);peerDisconnectTimer=setTimeout(()=>{peerDisconnectTimer=null;if(peer&&peer.connectionState==="disconnected"&&socket&&socket.readyState===WebSocket.OPEN)socket.close(1011,"WebRTC connection lost")},5000)}};
 }
-
-async function handleOffer(data) {
-  if (!peer || peer.connectionState === "failed" || peer.connectionState === "closed") createPeer();
-  await peer.setRemoteDescription(data);
-  const answer = await peer.createAnswer(); await peer.setLocalDescription(answer);
-  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "answer", data: peer.localDescription }));
-  setStatus("Negotiating secure video connection…");
-  for (const candidate of pendingIceCandidates) { try { await peer.addIceCandidate(candidate); } catch (error) { console.error("Queued ICE candidate rejected", error); } }
-  pendingIceCandidates = [];
+async function handleOffer(data){createPeer();await peer.setRemoteDescription(data);const answer=await peer.createAnswer();await peer.setLocalDescription(answer);if(socket&&socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:"answer",data:peer.localDescription}));setStatus("Negotiating secure connection…");for(const c of pendingIceCandidates){try{await peer.addIceCandidate(c)}catch(e){console.warn(e)}}pendingIceCandidates=[]}
+function scheduleViewerReconnect(){if(viewerClosing||reconnectTimer)return;resetRemoteHelp();if(peerDisconnectTimer){clearTimeout(peerDisconnectTimer);peerDisconnectTimer=null}if(peer){peer.close();peer=null}showWaiting("Connection lost. Reconnecting…");reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectViewer()},reconnectDelaySeconds*1000);reconnectDelaySeconds=Math.min(reconnectDelaySeconds*2,30)}
+async function connectViewer(){
+ if(!sessionId||!/^[a-f0-9]{32}$/i.test(sessionId)||!viewerToken||!/^[a-f0-9]{64}$/i.test(viewerToken)){showWaiting("A valid private QunView link is required.");return}
+ const expected="wss://qunview-signaling.onrender.com";if(signalingUrl!==expected){showWaiting("This QunView link is not valid.");return}
+ setStatus("Connecting to QunView…");createPeer();const attempt=++connectionAttempt;const ws=new WebSocket(signalingUrl);socket=ws;
+ ws.onopen=()=>{if(attempt!==connectionAttempt)return;ws.send(JSON.stringify({type:"join-session",sessionId,viewerToken}));setStatus("Joined session — waiting for sender…")};
+ ws.onmessage=async e=>{let m;try{m=JSON.parse(e.data)}catch{return}try{if(m.type==="offer"&&m.data)await handleOffer(m.data);else if(m.type==="ice-candidate"&&m.data){if(!peer||!peer.remoteDescription)pendingIceCandidates.push(m.data);else await peer.addIceCandidate(m.data)}else if(m.type==="waiting-for-sender-approval"){showWaiting("Waiting for the phone owner to Allow screen viewing…")}else if(m.type==="sender-approved-viewer"){showWaiting("Approved. Connecting to the shared screen…")}else if(m.type==="viewer-denied"){resetRemoteHelp();showWaiting("The phone owner denied this viewing request.")}else if(m.type==="sender-disconnected"){resetRemoteHelp();if(peer){peer.close();peer=null}pendingIceCandidates=[];showWaiting("The phone owner disconnected. Waiting for them to reconnect…")}else if(m.type==="sender-reconnected"){createPeer();showWaiting("Owner reconnected. Reconnecting to the shared screen…")}else if(m.type==="error"){const message=m.message||"Unable to join session.";setStatus(message);if(message==="Sender is not connected yet"&&socket===ws&&ws.readyState===WebSocket.OPEN){setStatus("Sender is offline. Reconnecting to check again…");ws.close(1011,"Waiting for sender");}}else if(m.type==="viewer-left")showWaiting("Sender ended the session.")}catch(err){console.error(err);showWaiting("Connection negotiation failed.")}};
+ ws.onerror=()=>setStatus("Signaling error. Reconnecting…");ws.onclose=event=>{if(!viewerClosing&&attempt===connectionAttempt&&event.code!==1000&&event.code!==1008)scheduleViewerReconnect()};
 }
-
-function scheduleViewerReconnect() {
-  if (viewerClosing || reconnectTimer) return;
-  if (peer) { peer.close(); peer = null; }
-  showWaiting("Connection lost. Reconnecting automatically…");
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connectViewer();
-  }, reconnectDelaySeconds * 1000);
-  reconnectDelaySeconds = Math.min(reconnectDelaySeconds * 2, 30);
-}
-
-async function connectViewer() {
-  if (!sessionId || !/^[a-f0-9]{32}$/i.test(sessionId)) { showWaiting("A valid session link is required."); return; }
-  const expectedSignalingUrl = "wss://qunview-signaling.onrender.com";
-  if (signalingUrl !== expectedSignalingUrl) { showWaiting("This QunView link is not valid."); return; }
-  setStatus("Connecting to QunView…");
-  createPeer();
-  const thisAttempt = ++connectionAttempt;
-  const currentSocket = new WebSocket(signalingUrl);
-  socket = currentSocket;
-  currentSocket.onopen = () => {
-    if (thisAttempt !== connectionAttempt) return;
-    reconnectDelaySeconds = 2;
-    currentSocket.send(JSON.stringify({ type: "join-session", sessionId }));
-    setStatus("Joined session — waiting for sender…");
-  };
-  currentSocket.onmessage = async (event) => {
-    let message; try { message = JSON.parse(event.data); } catch { return; }
-    try {
-      if (message.type === "offer" && message.data) await handleOffer(message.data);
-      else if (message.type === "ice-candidate" && message.data) {
-        if (!peer || !peer.remoteDescription) pendingIceCandidates.push(message.data);
-        else { try { await peer.addIceCandidate(message.data); } catch (error) { console.error("ICE candidate rejected", error); } }
-      } else if (message.type === "sender-reconnected") { createPeer(); showWaiting("Sender reconnected. Reconnecting automatically…"); }
-      else if (message.type === "error") setStatus(message.message || "Unable to join session.");
-      else if (message.type === "viewer-left") showWaiting("Sender ended the session.");
-    } catch (error) { console.error("Viewer negotiation failed", error); showWaiting("Connection interrupted. Waiting for automatic retry…"); }
-  };
-  currentSocket.onerror = () => setStatus("Signaling connection error. Reconnecting automatically…");
-  currentSocket.onclose = () => {
-    if (viewerClosing || thisAttempt !== connectionAttempt) return;
-    scheduleViewerReconnect();
-  };
-}
-window.addEventListener("beforeunload", () => {
-  viewerClosing = true;
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  if (socket && socket.readyState === WebSocket.OPEN) socket.close();
-  if (peer) peer.close();
-});
-
-connectViewer().catch((error) => {
-  console.error(error);
-  showWaiting("Could not start the viewer. Check the session link.");
-});
+backBtn.onclick=()=>sendControl({action:"back"});homeBtn.onclick=()=>sendControl({action:"home"});
+helpBtn.onclick=()=>{if(controlEnabled){sendControl({action:"release-control"});controlEnabled=false;controlPending=false;helpBtn.textContent="Request remote help";setStatus("Remote help paused and permission released")}else requestRemoteControl()};
+screenArea.addEventListener("pointerdown",e=>{if(!controlEnabled||!video.classList.contains("active"))return;const r=video.getBoundingClientRect();touchStart={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height,time:Date.now()}});
+screenArea.addEventListener("pointerup",e=>{if(!touchStart||!controlEnabled)return;const r=video.getBoundingClientRect(),x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y=Math.max(0,Math.min(1,(e.clientY-r.top)/r.height));const dx=x-touchStart.x,dy=y-touchStart.y;if(Math.abs(dx)+Math.abs(dy)<0.035)sendControl({action:"tap",x:touchStart.x,y:touchStart.y});else sendControl({action:"swipe",x1:touchStart.x,y1:touchStart.y,x2:x,y2:y});touchStart=null});
+window.addEventListener("beforeunload",()=>{viewerClosing=true;if(reconnectTimer)clearTimeout(reconnectTimer);if(peerDisconnectTimer)clearTimeout(peerDisconnectTimer);if(socket&&socket.readyState===WebSocket.OPEN)socket.close();if(peer)peer.close()});
+connectViewer().catch(e=>{console.error(e);showWaiting("Could not start viewer. Check the session link.")});

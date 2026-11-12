@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="qunview_accessibility_description">Allows the person viewing your QunView session to perform remote assistance actions only while you have enabled this service and an active screen-sharing session.</string>
+</resources>

@@ -16,6 +16,10 @@ The health endpoint is `/health`. WebSocket clients connect to the same host usi
 
 - Sessions are held in server memory and disappear on restart.
 - Session links are random and expire after 30 minutes.
-- This starter has no account authentication, abuse controls, or TURN credentials yet.
-- Production deployment must use HTTPS/WSS, rate limiting, origin restrictions, and short-lived authenticated session tokens.
-- WebRTC media transport and Android integration are not implemented by this signaling server.
+- The service issues short-lived TURN REST credentials only to clients presenting a valid session token when `TURN_URLS` and `TURN_SHARED_SECRET` are configured. It does not provide a TURN relay itself.
+- Production deployment must use HTTPS/WSS, rate limiting, origin restrictions, monitoring, and a configured TURN provider for restrictive networks.
+- The server relays signaling only; WebRTC media is peer-to-peer or routed through the separately configured TURN relay.
+
+## Tests
+
+Run `npm install` and `npm test` to exercise the health endpoint, session creation, viewer approval, signaling relay, session teardown, and one-viewer limit.

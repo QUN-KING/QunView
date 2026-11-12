@@ -30,10 +30,41 @@ Then build and test the Android app.
 
 ## 4. Important before public use
 
-- Configure a TURN relay with credentials for networks where direct WebRTC connectivity fails. The current app only has a public STUN server.
-- Add authentication/session access protection, origin checks, rate limiting, and abuse monitoring before public launch.
+- The included free deployment uses Google STUN only. No paid TURN provider or billing credentials are configured. Direct peer-to-peer video works on many networks, but some restrictive networks require a TURN relay and may not connect in this free-only setup. Do not enable a service that can incur charges; if a genuinely no-cost TURN option is not available, treat those networks as unsupported rather than risking a bill.
+- The signaling service currently uses random private session/viewer/resume tokens, timing-safe token comparison, a viewer-origin allowlist, an 80-message-per-10-second per-socket limit, and a 64 KB WebSocket payload limit. These controls reduce casual misuse but are not a substitute for a full production security review and monitoring.
 - Use only HTTPS/WSS. Do not put long-lived secrets in the Android app or viewer URL.
 - Verify Android MediaProjection consent, foreground notification behavior, stop/revoke handling, and app uninstall behavior on real devices.
 - Do not treat a successful APK build as proof that live screen sharing works. Test on two separate Android phones and different networks.
 
-No screen recording or remote-control feature is part of QunView.
+QunView does not record or save screen video. Optional remote assistance (Back, Home, tap, and swipe) is supported only when the device owner separately enables the QunView Accessibility service in Android settings. Screen viewing does not require enabling remote assistance.
+
+
+## Consent and operational notes
+
+- Android MediaProjection consent is shown for each new capture session; it cannot be silently reused for a new session.
+- While the same viewer WebSocket remains connected, a temporary sender signaling interruption can recover without restarting screen capture or asking for viewing approval again. If the viewer browser connection itself closes and rejoins, the owner must approve that new viewer connection.
+- The sender receives a single Allow/Deny notification for a pending viewer request and a separate ongoing Stop sharing notification.
+- Android notification permission, channel settings, Do Not Disturb, and manufacturer battery restrictions can affect notification delivery.
+- The free-only configuration is STUN-only. Network compatibility is therefore not guaranteed on mobile carriers, corporate Wi-Fi, VPNs, or firewalls that block direct peer-to-peer WebRTC. Do not configure a provider with usage-based or possible overage charges.
+- Do not distribute as production-ready until two-device testing covers approval, denial, background notifications, stop, reconnect, and optional remote assistance.
+
+
+## Two-device release checklist
+
+Complete this checklist on two physical Android phones before calling a release ready. Record the Android version and device model for each phone.
+
+- [ ] Install the same newly built APK on the sender phone; open the viewer URL on the second phone.
+- [ ] Start a share and verify Android displays its system MediaProjection consent prompt.
+- [ ] Request to view from the viewer phone; verify the sender can Allow and Deny independently.
+- [ ] Deny once and confirm no screen frames are shown; request again and Allow.
+- [ ] Confirm the viewer sees the live screen only after the sender allows it.
+- [ ] Request remote assistance; confirm it remains disabled until the sender separately approves it.
+- [ ] Verify Back, Home, tap, and swipe only work after remote-assistance approval.
+- [ ] Disable remote assistance from the sender notification and verify commands stop immediately.
+- [ ] Stop screen sharing from the persistent Android notification and verify the viewer loses the stream.
+- [ ] Repeat with the sender app backgrounded, screen locked/unlocked, and viewer browser closed/reopened.
+- [ ] Test a Wi-Fi-to-mobile-data or other network change and reconnect behavior.
+- [ ] Test on a network where direct peer-to-peer WebRTC is blocked; verify QunView reports that a direct connection could not be established. The free-only release remains STUN-only and does not add TURN or paid relay services.
+- [ ] Disable the QunView Accessibility service in Android Settings and verify remote commands are revoked.
+
+Do not mark the release ready based on CI or APK creation alone.
