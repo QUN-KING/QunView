@@ -25,6 +25,7 @@ In `android/app/src/main/java/com/qunking/qunview/WebRtcScreenStreamer.kt`, repl
 
 - `SIGNALING_URL` with the deployed `wss://` URL.
 - `VIEWER_BASE_URL` with the deployed viewer `https://` URL.
+- In `viewer/viewer.js`, set its fixed `signalingUrl` constant to the same trusted `wss://` host. The viewer intentionally does not accept a signaling host from the share link, so a crafted link cannot redirect the private viewer token to an attacker-controlled WebSocket server.
 
 Then build and test the Android app.
 
