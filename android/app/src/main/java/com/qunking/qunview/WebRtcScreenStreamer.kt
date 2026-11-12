@@ -345,6 +345,8 @@ class WebRtcScreenStreamer(
                     revokeRemoteControlApproval()
                     stopPeerOnly()
                     pendingRemoteIce.clear()
+                    // Clear the sender-side pending prompt so the next viewer can request access.
+                    onViewerLeft()
                 }
                 "viewer-left" -> {
                     viewerApproved = false
