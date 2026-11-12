@@ -2,6 +2,9 @@ name: Live deployment smoke check
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
