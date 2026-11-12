@@ -1,3 +1,4 @@
+plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 val releaseKeystorePath = System.getenv("QUNVIEW_KEYSTORE_PATH")
 val releaseStorePassword = System.getenv("QUNVIEW_KEYSTORE_PASSWORD")
 val releaseKeyAlias = System.getenv("QUNVIEW_KEY_ALIAS")
@@ -9,7 +10,6 @@ val releaseSigningReady = listOf(
     releaseKeyPassword
 ).all { !it.isNullOrBlank() }
 
-plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
     namespace="com.qunking.qunview"
     compileSdk=35
