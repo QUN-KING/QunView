@@ -29,3 +29,5 @@ jobs:
         run: npm test
       - name: Check viewer JavaScript syntax
         run: node --check viewer/viewer.js
+      - name: Test viewer signaling host pinning
+        run: node --test viewer/*.test.js
