@@ -82,3 +82,11 @@ Create a keystore with the alias `qunview-release`, then add these four reposito
 - `QUNVIEW_KEY_PASSWORD` — key password.
 
 On Linux or Termux, encode the keystore without line breaks using `base64 -w 0 qunview-release.jks`. Do not paste the keystore or passwords into chat, issues, commits, or logs. The workflow checks the APK signature and removes its temporary keystore after the job. Without all four secrets, signed release creation intentionally fails with a clear missing-secret message; the debug APK workflow remains independent.
+
+## Live deployment smoke check
+
+After the Render services are deployed, run the GitHub Actions workflow **Live deployment smoke check** manually. It retries the signaling health endpoint and verifies the hosted viewer page. A successful smoke check verifies that both public web endpoints respond; it does not prove that WebRTC connects between two phones or that Android capture/notifications behave correctly.
+
+## Protecting the main branch
+
+The repository currently has no active ruleset for `main`. In GitHub, open Settings → Branches → Add branch protection rule (or Settings → Rules → Rulesets → New branch ruleset) and target `main`. Enable **Require a pull request before merging**, **Require status checks to pass before merging**, and **Block force pushes**. Select the checks `signaling-tests` and `debug-apk` as required checks, then save and confirm the rule is active. Do not require an approval count that prevents the repository owner from merging their own changes if no second reviewer is available.
