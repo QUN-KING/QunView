@@ -318,7 +318,7 @@ class WebRtcScreenStreamer(
                     viewerToken = message.getString("viewerToken")
                     retryDelay = 2L
                     retryPending = false
-                    onSessionReady("$VIEWER_BASE_URL/?session=$sessionId&key=$viewerToken&signal=$SIGNALING_URL")
+                    onSessionReady("$VIEWER_BASE_URL/?session=$sessionId&key=$viewerToken")
                 }
                 "session-resumed" -> {
                     retryDelay = 2L
