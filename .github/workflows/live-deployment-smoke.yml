@@ -1,0 +1,27 @@
+name: Live deployment smoke check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check signaling health endpoint
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 10 --max-time 20 \
+            https://qunview-signaling.onrender.com/health -o "$RUNNER_TEMP/signaling-health.json"
+          node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(data.ok!==true || data.service!=="qunview-signaling") process.exit(1); console.log("Signaling health check passed");' "$RUNNER_TEMP/signaling-health.json"
+
+      - name: Check hosted viewer page
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 10 --max-time 20 \
+            https://qunview-viewer.onrender.com/ -o "$RUNNER_TEMP/qunview-viewer.html"
+          grep -q "QunView" "$RUNNER_TEMP/qunview-viewer.html"
+          grep -q 'id="remoteVideo"' "$RUNNER_TEMP/qunview-viewer.html"
+          echo "Viewer page smoke check passed"
