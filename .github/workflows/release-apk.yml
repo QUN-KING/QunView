@@ -54,11 +54,6 @@ jobs:
 
       - name: Build signed release APK
         run: gradle -p android assembleRelease --stacktrace
-        env:
-          QUNVIEW_KEYSTORE_PATH: ${{ env.QUNVIEW_KEYSTORE_PATH }}
-          QUNVIEW_KEYSTORE_PASSWORD: ${{ secrets.QUNVIEW_KEYSTORE_PASSWORD }}
-          QUNVIEW_KEY_ALIAS: ${{ secrets.QUNVIEW_KEY_ALIAS }}
-          QUNVIEW_KEY_PASSWORD: ${{ secrets.QUNVIEW_KEY_PASSWORD }}
 
       - name: Verify APK signature
         shell: bash
