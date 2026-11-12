@@ -4,7 +4,7 @@ const placeholder=document.getElementById("placeholder");
 const statusText=document.getElementById("status");
 const screenArea=document.getElementById("screenArea");
 const backBtn=document.getElementById("backBtn"),homeBtn=document.getElementById("homeBtn"),helpBtn=document.getElementById("helpBtn");
-const params=new URLSearchParams(location.search),sessionId=params.get("session"),viewerToken=params.get("key"),signalingUrl=params.get("signal");
+const params=new URLSearchParams(location.search),sessionId=params.get("session"),viewerToken=params.get("key"),signalingUrl="wss://qunview-signaling.onrender.com";
 let iceServers=[{urls:["stun:stun.l.google.com:19302"]}];
 let socket,peer,controlChannel,pendingIceCandidates=[],viewerClosing=false,reconnectTimer=null,reconnectDelaySeconds=2,connectionAttempt=0,controlEnabled=false,controlPending=false,touchStart=null,peerDisconnectTimer=null;
 function setStatus(s){statusText.textContent=s}
