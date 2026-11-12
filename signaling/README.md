@@ -16,8 +16,8 @@ The health endpoint is `/health`. WebSocket clients connect to the same host usi
 
 - Sessions are held in server memory and disappear on restart.
 - Session links are random and expire after 30 minutes.
-- The service issues short-lived TURN REST credentials only to clients presenting a valid session token when `TURN_URLS` and `TURN_SHARED_SECRET` are configured. It does not provide a TURN relay itself.
-- Production deployment must use HTTPS/WSS, rate limiting, origin restrictions, monitoring, and a configured TURN provider for restrictive networks.
+- This repository does not implement a TURN-credentials endpoint or TURN relay configuration. The Android sender and viewer currently use Google STUN only; some restrictive networks will fail to connect. Do not assume setting TURN-related environment variables enables TURN.
+- Production deployment must use HTTPS/WSS, rate limiting, origin restrictions, monitoring, and a separate security review. This free-only project intentionally remains STUN-only; TURN support is not implemented.
 - The server relays signaling only; WebRTC media is peer-to-peer or routed through the separately configured TURN relay.
 
 ## Tests
