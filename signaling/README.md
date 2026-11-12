@@ -18,7 +18,7 @@ The health endpoint is `/health`. WebSocket clients connect to the same host usi
 - Session links are random and expire after 30 minutes.
 - This repository does not implement a TURN-credentials endpoint or TURN relay configuration. The Android sender and viewer currently use Google STUN only; some restrictive networks will fail to connect. Do not assume setting TURN-related environment variables enables TURN.
 - Production deployment must use HTTPS/WSS, rate limiting, origin restrictions, monitoring, and a separate security review. This free-only project intentionally remains STUN-only; TURN support is not implemented.
-- The server relays signaling only; WebRTC media is peer-to-peer or routed through the separately configured TURN relay.
+- The server relays signaling only; WebRTC media is peer-to-peer. There is no configured TURN relay in this repository.
 
 ## Tests
 
