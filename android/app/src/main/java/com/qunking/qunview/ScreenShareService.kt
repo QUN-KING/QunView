@@ -37,8 +37,12 @@ class ScreenShareService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_APPROVE_REMOTE_CONTROL -> {
-                clearRemoteControlRequest()
-                if (streamer?.approveRemoteControl() == true) showRemoteControlActiveNotification()
+                // A stale notification or delayed activity action must never grant consent.
+                // Only accept approval while the current viewer's request is still pending.
+                if (remoteControlRequestPending) {
+                    clearRemoteControlRequest()
+                    if (streamer?.approveRemoteControl() == true) showRemoteControlActiveNotification()
+                }
                 return START_NOT_STICKY
             }
             ACTION_DENY_REMOTE_CONTROL -> { clearRemoteControlRequest(); streamer?.denyRemoteControl(); return START_NOT_STICKY }
