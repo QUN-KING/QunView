@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
                     shareViewerLink(link)
                     refreshMainButton()
                 }
+                ScreenShareService.ACTION_SHARING_STOPPED -> refreshMainButton()
                 ScreenShareService.ACTION_ERROR -> {
                     val message = intent.getStringExtra(ScreenShareService.EXTRA_ERROR) ?: "Screen sharing could not start."
                     AlertDialog.Builder(this@MainActivity).setTitle("QunView").setMessage(message).setPositiveButton("OK", null).show()
@@ -88,6 +89,7 @@ class MainActivity : ComponentActivity() {
         val filter = IntentFilter().apply {
             addAction(ScreenShareService.ACTION_SESSION_READY)
             addAction(ScreenShareService.ACTION_ERROR)
+            addAction(ScreenShareService.ACTION_SHARING_STOPPED)
             addAction(ScreenShareService.ACTION_VIEWER_REQUEST)
             addAction(ScreenShareService.ACTION_REMOTE_CONTROL_REQUEST)
         }
