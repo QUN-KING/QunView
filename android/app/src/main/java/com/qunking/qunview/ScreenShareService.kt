@@ -56,6 +56,7 @@ class ScreenShareService : Service() {
         }
         createNotificationChannels()
         isActive = true
+        sendBroadcast(Intent(ACTION_SHARING_STARTED).setPackage(packageName))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, buildNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
@@ -192,7 +193,9 @@ class ScreenShareService : Service() {
 
     override fun onDestroy() {
         if (activeInstance === this) activeInstance = null
+        val wasActive = isActive
         isActive = false
+        if (wasActive) sendBroadcast(Intent(ACTION_SHARING_STOPPED).setPackage(packageName))
         clearViewerRequest()
         clearSavedViewerLink()
         streamer?.stop()
@@ -244,6 +247,7 @@ class ScreenShareService : Service() {
             private set
 
         const val ACTION_STOP_SHARING = "com.qunking.qunview.STOP_SHARING"
+        const val ACTION_SHARING_STARTED = "com.qunking.qunview.SHARING_STARTED"
         const val ACTION_SHARING_STOPPED = "com.qunking.qunview.SHARING_STOPPED"
         const val ACTION_APPROVE_VIEWER = "com.qunking.qunview.APPROVE_VIEWER"
         const val ACTION_DENY_VIEWER = "com.qunking.qunview.DENY_VIEWER"
