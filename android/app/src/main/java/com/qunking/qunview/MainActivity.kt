@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.projection.MediaProjectionManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -19,9 +18,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 
 class MainActivity : ComponentActivity() {
     private var receiverRegistered = false
-    private var accessibilitySettingsOpened = false
-    private var savedViewerLink: String? = null
-    private var shareLinkButton: Button? = null
+    private var startAfterAccessibilitySettings = false
+    private var mainButton: Button? = null
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -32,13 +30,13 @@ class MainActivity : ComponentActivity() {
             when (intent.action) {
                 ScreenShareService.ACTION_SESSION_READY -> {
                     val link = intent.getStringExtra(ScreenShareService.EXTRA_VIEWER_LINK) ?: return
-                    savedViewerLink = link
-                    shareLinkButton?.isEnabled = true
                     shareViewerLink(link)
+                    refreshMainButton()
                 }
                 ScreenShareService.ACTION_ERROR -> {
                     val message = intent.getStringExtra(ScreenShareService.EXTRA_ERROR) ?: "Screen sharing could not start."
                     AlertDialog.Builder(this@MainActivity).setTitle("QunView").setMessage(message).setPositiveButton("OK", null).show()
+                    refreshMainButton()
                 }
                 ScreenShareService.ACTION_VIEWER_REQUEST -> showViewerApproval()
                 ScreenShareService.ACTION_REMOTE_CONTROL_REQUEST -> showRemoteControlApproval()
@@ -54,7 +52,9 @@ class MainActivity : ComponentActivity() {
                 putExtra(ScreenShareService.EXTRA_RESULT_DATA, data)
             }
             startForegroundService(service)
+            refreshMainButton()
         } else {
+            refreshMainButton()
             showRequiredChoice()
         }
     }
@@ -62,39 +62,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val title = TextView(this).apply {
-            text = "QunView\n\nShare your screen only when you choose. Android asks when a new screen-capture session starts. A temporary network reconnect should not ask again while this session remains active. Remote assistance (tap and swipe) is optional and requires a separate Accessibility setting."
+            text = "QunView\n\nShare your screen only when you choose. The main button starts or stops sharing. Android will ask for screen-capture approval. Remote control needs your separate Accessibility approval and can be enabled during setup."
             textSize = 18f
             setPadding(24, 24, 24, 24)
         }
-        val shareButton = Button(this).apply {
-            text = "Start screen sharing"
-            setOnClickListener { requestScreenPermission() }
-        }
-        shareLinkButton = Button(this).apply {
-            text = "Share viewer link again"
-            isEnabled = false
+        mainButton = Button(this).apply {
             setOnClickListener {
-                val link = savedViewerLink ?: getSharedPreferences(ScreenShareService.PREFS_NAME, MODE_PRIVATE)
-                    .getString(ScreenShareService.PENDING_VIEWER_LINK, null)
-                if (link != null) {
-                    savedViewerLink = link
-                    shareViewerLink(link)
-                }
-            }
-        }
-        val accessibilityButton = Button(this).apply {
-            text = "Enable optional remote assistance"
-            setOnClickListener { openAccessibilitySettings() }
-        }
-        val stopButton = Button(this).apply {
-            text = "Stop screen sharing"
-            setOnClickListener {
-                startService(Intent(this@MainActivity, ScreenShareService::class.java)
-                    .setAction(ScreenShareService.ACTION_STOP_SHARING))
+                if (ScreenShareService.isActive) stopScreenSharing() else beginStartFlow()
             }
         }
         val status = TextView(this).apply {
-            text = "Screen-only sharing works without Accessibility permission."
+            text = "You approve every viewer. You can stop sharing at any time."
             textSize = 14f
             setPadding(24, 12, 24, 12)
         }
@@ -102,12 +80,10 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 20, 20, 20)
             addView(title)
-            addView(shareButton)
-            addView(stopButton)
-            addView(shareLinkButton)
-            addView(accessibilityButton)
+            addView(mainButton)
             addView(status)
         })
+        refreshMainButton()
 
         val filter = IntentFilter().apply {
             addAction(ScreenShareService.ACTION_SESSION_READY)
@@ -121,12 +97,38 @@ class MainActivity : ComponentActivity() {
             registerReceiver(serviceEvents, filter)
         }
         receiverRegistered = true
-        refreshSavedViewerLink()
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    private fun refreshMainButton() {
+        mainButton?.text = if (ScreenShareService.isActive) "Stop sharing" else "Start sharing"
+    }
+
+    private fun stopScreenSharing() {
+        startService(Intent(this, ScreenShareService::class.java)
+            .setAction(ScreenShareService.ACTION_STOP_SHARING))
+        refreshMainButton()
+    }
+
+    private fun beginStartFlow() {
+        if (isAccessibilityServiceEnabled()) {
+            requestScreenPermission()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Remote control permission")
+            .setMessage("Enable Android Accessibility if you also want the viewer to tap, swipe, Back or Home. This is optional; screen sharing can continue without it. Android requires you to enable it manually in Settings.")
+            .setPositiveButton("Enable") { _, _ ->
+                startAfterAccessibilitySettings = true
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            .setNegativeButton("Continue without remote control") { _, _ -> requestScreenPermission() }
+            .setOnCancelListener { }
+            .show()
     }
 
     private fun showViewerApproval() {
@@ -155,11 +157,6 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    private fun openAccessibilitySettings() {
-        accessibilitySettingsOpened = true
-        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-    }
-
     private fun isAccessibilityServiceEnabled(): Boolean {
         val expected = packageName + "/" + QunViewAccessibilityService::class.java.name
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
@@ -168,14 +165,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        refreshSavedViewerLink()
-        if (accessibilitySettingsOpened) {
-            accessibilitySettingsOpened = false
-            val message = if (isAccessibilityServiceEnabled())
-                "Remote assistance is enabled. You can still share your screen without using remote controls."
-            else
-                "Remote assistance remains off. Screen-only sharing is still available."
-            AlertDialog.Builder(this).setTitle("QunView").setMessage(message).setPositiveButton("OK", null).show()
+        refreshMainButton()
+        if (startAfterAccessibilitySettings) {
+            startAfterAccessibilitySettings = false
+            requestScreenPermission()
         }
     }
 
@@ -195,26 +188,9 @@ class MainActivity : ComponentActivity() {
             .setTitle("Screen-sharing permission required")
             .setMessage("QunView cannot share your screen unless you approve Android's permission.")
             .setCancelable(true)
-            .setPositiveButton("Give Permission") { _, _ -> requestScreenPermission() }
-            .setNegativeButton("Uninstall App") { _, _ -> requestUninstall() }
-            .setNeutralButton("Cancel", null)
+            .setPositiveButton("Try again") { _, _ -> requestScreenPermission() }
+            .setNegativeButton("Cancel", null)
             .show()
-    }
-
-    private fun requestUninstall() {
-        startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:" + packageName)))
-    }
-
-    private fun refreshSavedViewerLink() {
-        val stored = getSharedPreferences(ScreenShareService.PREFS_NAME, MODE_PRIVATE)
-            .getString(ScreenShareService.PENDING_VIEWER_LINK, null)
-        if (ScreenShareService.isActive && !stored.isNullOrBlank()) {
-            savedViewerLink = stored
-            shareLinkButton?.isEnabled = true
-        } else {
-            savedViewerLink = null
-            shareLinkButton?.isEnabled = false
-        }
     }
 
     private fun shareViewerLink(link: String) {
