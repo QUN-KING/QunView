@@ -28,7 +28,7 @@ class ScreenShareService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP_SHARING -> { clearViewerRequest(); clearSavedViewerLink(); streamer?.stop(); streamer = null; stopSelf(); return START_NOT_STICKY }
+            ACTION_STOP_SHARING -> { isActive = false; sendBroadcast(Intent(ACTION_SHARING_STOPPED).setPackage(packageName)); clearViewerRequest(); clearSavedViewerLink(); streamer?.stop(); streamer = null; stopSelf(); return START_NOT_STICKY }
             ACTION_APPROVE_VIEWER -> {
                 if (viewerRequestPending) {
                     clearViewerRequest()
@@ -244,6 +244,7 @@ class ScreenShareService : Service() {
             private set
 
         const val ACTION_STOP_SHARING = "com.qunking.qunview.STOP_SHARING"
+        const val ACTION_SHARING_STOPPED = "com.qunking.qunview.SHARING_STOPPED"
         const val ACTION_APPROVE_VIEWER = "com.qunking.qunview.APPROVE_VIEWER"
         const val ACTION_DENY_VIEWER = "com.qunking.qunview.DENY_VIEWER"
         const val ACTION_APPROVE_REMOTE_CONTROL = "com.qunking.qunview.APPROVE_REMOTE_CONTROL"
