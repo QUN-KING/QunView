@@ -2,6 +2,7 @@ package com.qunking.qunview
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -147,6 +148,18 @@ class MainActivity : ComponentActivity() {
         continueStartFlow()
     }
 
+    private fun areRequiredNotificationsEnabled(): Boolean {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(NotificationManager::class.java)
+            val viewerChannel = manager.getNotificationChannel(ScreenShareService.REQUEST_CHANNEL_ID)
+            val sharingChannel = manager.getNotificationChannel(ScreenShareService.CHANNEL_ID)
+            if (viewerChannel?.importance == NotificationManager.IMPORTANCE_NONE ||
+                sharingChannel?.importance == NotificationManager.IMPORTANCE_NONE) return false
+        }
+        return true
+    }
+
     private fun showNotificationPermissionRequired() {
         AlertDialog.Builder(this)
             .setTitle("Notifications are required")
@@ -159,7 +172,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun continueStartFlow() {
-        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+        if (!areRequiredNotificationsEnabled()) {
             showNotificationPermissionRequired()
             return
         }
