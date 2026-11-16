@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -15,15 +16,24 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : ComponentActivity() {
     private var receiverRegistered = false
     private var startAfterAccessibilitySettings = false
+    private var pendingStartAfterNotificationPermission = false
     private var mainButton: Button? = null
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* Sharing can proceed; Android controls notification visibility. */ }
+    ) { granted ->
+        val continueStarting = pendingStartAfterNotificationPermission
+        pendingStartAfterNotificationPermission = false
+        if (continueStarting) {
+            if (granted) continueStartFlow() else showNotificationPermissionRequired()
+        }
+    }
 
     private val serviceEvents = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -78,13 +88,22 @@ class MainActivity : ComponentActivity() {
             textSize = 14f
             setPadding(24, 12, 24, 12)
         }
-        setContentView(LinearLayout(this).apply {
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 20, 20, 20)
             addView(title)
             addView(mainButton)
             addView(status)
-        })
+        }
+        // Android 15 enforces edge-to-edge for apps targeting API 35.
+        // Keep the controls clear of the status bar, cutout and navigation bar.
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(20 + bars.left, 20 + bars.top, 20 + bars.right, 20 + bars.bottom)
+            insets
+        }
+        setContentView(root)
+        ViewCompat.requestApplyInsets(root)
         refreshMainButton()
 
         val filter = IntentFilter().apply {
@@ -102,11 +121,7 @@ class MainActivity : ComponentActivity() {
         }
         receiverRegistered = true
 
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
+     }
 
     private fun refreshMainButton() {
         mainButton?.text = if (ScreenShareService.isActive) "Stop sharing" else "Start sharing"
@@ -119,14 +134,37 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun beginStartFlow() {
+        // Viewer approval and the persistent Stop action are notification-based.
+        // Do not start a session on Android 13+ when those controls cannot be shown.
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pendingStartAfterNotificationPermission = true
+            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        continueStartFlow()
+    }
+
+    private fun showNotificationPermissionRequired() {
+        AlertDialog.Builder(this)
+            .setTitle("Notifications are required")
+            .setMessage("QunView needs notifications to show viewer approval requests and the Stop sharing control while the app is in the background. Allow notifications in Android App Settings, then tap Start sharing again.")
+            .setPositiveButton("Open app settings") { _, _ ->
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun continueStartFlow() {
         if (isAccessibilityServiceEnabled()) {
             requestScreenPermission()
             return
         }
         AlertDialog.Builder(this)
             .setTitle("Remote control permission")
-            .setMessage("Enable Android Accessibility if you also want the viewer to tap, swipe, Back or Home. This is optional; screen sharing can continue without it. Android requires you to enable it manually in Settings.")
-            .setPositiveButton("Enable") { _, _ ->
+            .setMessage("OPTIONAL REMOTE ASSISTANCE DISCLOSURE\n\nIf you enable QunView Accessibility, the approved viewer can send Back, Home, Tap and Swipe commands only after you separately approve Remote Assistance for that session. QunView does not read window text or collect the contents of other apps through Accessibility. Screen video is shared only after Android screen-capture approval and your approval of each viewer. You can disable Accessibility or stop sharing at any time.\n\nChoose Enable only if you understand and want this optional feature.")
+            .setPositiveButton("I understand — Open Settings") { _, _ ->
                 startAfterAccessibilitySettings = true
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
