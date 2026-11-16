@@ -264,8 +264,8 @@ class ScreenShareService : Service() {
         const val PREFS_NAME = "qunview_state"
         const val PENDING_VIEWER_LINK = "pending_viewer_link"
         private const val TAG = "QunViewService"
-        private const val CHANNEL_ID = "qunview_screen_share"
-        private const val REQUEST_CHANNEL_ID = "qunview_viewer_requests"
+        const val CHANNEL_ID = "qunview_screen_share"
+        const val REQUEST_CHANNEL_ID = "qunview_viewer_requests"
         private const val NOTIFICATION_ID = 41
         private const val VIEWER_REQUEST_NOTIFICATION_ID = 42
         private const val CONTROL_REQUEST_NOTIFICATION_ID = 43
