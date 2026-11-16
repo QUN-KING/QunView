@@ -15,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -158,6 +159,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun continueStartFlow() {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+            showNotificationPermissionRequired()
+            return
+        }
         if (isAccessibilityServiceEnabled()) {
             requestScreenPermission()
             return
