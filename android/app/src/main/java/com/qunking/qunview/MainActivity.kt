@@ -17,6 +17,7 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -117,11 +118,7 @@ class MainActivity : ComponentActivity() {
             addAction(ScreenShareService.ACTION_VIEWER_REQUEST)
             addAction(ScreenShareService.ACTION_REMOTE_CONTROL_REQUEST)
         }
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(serviceEvents, filter, Context.RECEIVER_NOT_EXPORTED)
-        else {
-            @Suppress("DEPRECATION")
-            registerReceiver(serviceEvents, filter)
-        }
+        ContextCompat.registerReceiver(this, serviceEvents, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         receiverRegistered = true
 
      }
