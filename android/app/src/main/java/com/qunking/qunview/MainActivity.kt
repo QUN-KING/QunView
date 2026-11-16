@@ -6,7 +6,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.Uri
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +16,7 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : ComponentActivity() {
@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         val title = TextView(this).apply {
             text = "QunView\n\nShare your screen only when you choose. The main button starts or stops sharing. Android will ask for screen-capture approval. Remote control needs your separate Accessibility approval and can be enabled during setup."
             textSize = 18f
@@ -150,7 +151,7 @@ class MainActivity : ComponentActivity() {
             .setTitle("Notifications are required")
             .setMessage("QunView needs notifications to show viewer approval requests and the Stop sharing control while the app is in the background. Allow notifications in Android App Settings, then tap Start sharing again.")
             .setPositiveButton("Open app settings") { _, _ ->
-                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
             }
             .setNegativeButton("Cancel", null)
             .show()
