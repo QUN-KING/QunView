@@ -104,7 +104,9 @@ class MainActivity : ComponentActivity() {
         // Android 15 enforces edge-to-edge for apps targeting API 35.
         // Keep the controls clear of the status bar, cutout and navigation bar.
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
             view.setPadding(20 + bars.left, 20 + bars.top, 20 + bars.right, 20 + bars.bottom)
             insets
         }
