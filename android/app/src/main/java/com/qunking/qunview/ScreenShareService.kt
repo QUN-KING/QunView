@@ -83,6 +83,7 @@ class ScreenShareService : Service() {
         streamer = WebRtcScreenStreamer(
             applicationContext,
             resultData,
+            intent.getBooleanExtra(EXTRA_ALLOW_REMOTE_ASSISTANCE, false),
             onSessionReady = { viewerLink ->
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                     .putString(PENDING_VIEWER_LINK, viewerLink).apply()
@@ -257,6 +258,7 @@ class ScreenShareService : Service() {
         const val ACTION_REMOTE_CONTROL_REQUEST = "com.qunking.qunview.REMOTE_CONTROL_REQUEST"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
+        const val EXTRA_ALLOW_REMOTE_ASSISTANCE = "allow_remote_assistance"
         const val ACTION_SESSION_READY = "com.qunking.qunview.SESSION_READY"
         const val ACTION_ERROR = "com.qunking.qunview.SHARING_ERROR"
         const val EXTRA_VIEWER_LINK = "viewer_link"
