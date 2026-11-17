@@ -207,7 +207,7 @@ class WebRtcScreenStreamer(
                         when (command.optString("action")) {
                             "request-control" -> {
                                 val accessibilityService = QunViewAccessibilityService.instance
-                                if (allowRemoteAssistance && viewerApproved && accessibilityService != null) {
+                                if (RemoteAssistancePolicy.canRequestControl(allowRemoteAssistance, viewerApproved, accessibilityService != null)) {
                                     if (remoteControlApproved && approvedAccessibilityService === accessibilityService) {
                                         sendControlReply("control-approved")
                                     } else {
@@ -225,8 +225,7 @@ class WebRtcScreenStreamer(
                             "release-control" -> revokeRemoteControlApproval()
                             "back", "home", "tap", "swipe" -> {
                                 val accessibilityService = QunViewAccessibilityService.instance
-                                if (allowRemoteAssistance && viewerApproved && remoteControlApproved &&
-                                    accessibilityService != null &&
+                                if (RemoteAssistancePolicy.canExecuteControl(allowRemoteAssistance, viewerApproved, remoteControlApproved, accessibilityService != null) &&
                                     approvedAccessibilityService === accessibilityService) {
                                     accessibilityService.performRemoteCommand(command)
                                 } else if (remoteControlApproved) {
@@ -248,7 +247,7 @@ class WebRtcScreenStreamer(
 
     @Synchronized fun approveRemoteControl(): Boolean {
         val accessibilityService = QunViewAccessibilityService.instance
-        if (stopped || !allowRemoteAssistance || !viewerApproved || accessibilityService == null) {
+        if (stopped || !RemoteAssistancePolicy.canRequestControl(allowRemoteAssistance, viewerApproved, accessibilityService != null)) {
             revokeRemoteControlApproval()
             sendControlReply("control-denied")
             return false
