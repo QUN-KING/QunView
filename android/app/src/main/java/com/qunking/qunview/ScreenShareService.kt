@@ -83,7 +83,7 @@ class ScreenShareService : Service() {
         streamer = WebRtcScreenStreamer(
             applicationContext,
             resultData,
-            intent.getBooleanExtra(EXTRA_ALLOW_REMOTE_ASSISTANCE, false),
+            intent?.getBooleanExtra(EXTRA_ALLOW_REMOTE_ASSISTANCE, false) ?: false,
             onSessionReady = { viewerLink ->
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                     .putString(PENDING_VIEWER_LINK, viewerLink).apply()
