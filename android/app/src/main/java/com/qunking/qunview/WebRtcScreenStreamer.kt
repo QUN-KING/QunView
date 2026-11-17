@@ -226,7 +226,7 @@ class WebRtcScreenStreamer(
                             "back", "home", "tap", "swipe" -> {
                                 val accessibilityService = QunViewAccessibilityService.instance
                                 if (RemoteAssistancePolicy.canExecuteControl(allowRemoteAssistance, viewerApproved, remoteControlApproved, accessibilityService != null) &&
-                                    approvedAccessibilityService === accessibilityService) {
+                                    accessibilityService != null && approvedAccessibilityService === accessibilityService) {
                                     accessibilityService.performRemoteCommand(command)
                                 } else if (remoteControlApproved) {
                                     revokeRemoteControlApproval()
