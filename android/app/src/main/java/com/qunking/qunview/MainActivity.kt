@@ -234,8 +234,18 @@ class MainActivity : ComponentActivity() {
         refreshMainButton()
         if (startAfterAccessibilitySettings) {
             startAfterAccessibilitySettings = false
-            allowRemoteAssistanceForSession = isAccessibilityServiceEnabled()
-            requestScreenPermission()
+            if (isAccessibilityServiceEnabled()) {
+                allowRemoteAssistanceForSession = true
+                requestScreenPermission()
+            } else {
+                allowRemoteAssistanceForSession = false
+                AlertDialog.Builder(this)
+                    .setTitle("Remote Assistance is off")
+                    .setMessage("QunView Accessibility was not enabled in Android Settings. You can still share your screen without remote taps or swipes.")
+                    .setPositiveButton("Continue screen-only") { _, _ -> requestScreenPermission() }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
         }
     }
 
