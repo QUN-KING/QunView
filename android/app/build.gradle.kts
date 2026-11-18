@@ -10,6 +10,12 @@ val releaseSigningReady = listOf(
     releaseKeyPassword
 ).all { !it.isNullOrBlank() }
 
+val buildVersionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.takeIf { it > 0 } ?: 1
+val buildVersionName = System.getenv("GITHUB_REF_NAME")
+    ?.takeIf { it.startsWith("v") && it.length > 1 }
+    ?.removePrefix("v")
+    ?: "0.1.0"
+
 android {
     namespace="com.qunking.qunview"
     compileSdk=35
@@ -18,7 +24,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    defaultConfig { applicationId="com.qunking.qunview"; minSdk=26; targetSdk=35; versionCode=1; versionName="0.1.0" }
+    defaultConfig { applicationId="com.qunking.qunview"; minSdk=26; targetSdk=35; versionCode=buildVersionCode; versionName=buildVersionName }
     signingConfigs {
         if (releaseSigningReady) {
             create("release") {
