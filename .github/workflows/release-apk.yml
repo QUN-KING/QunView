@@ -13,6 +13,7 @@ jobs:
   signed-release:
     runs-on: ubuntu-latest
     env:
+      QUNVIEW_VERSION_CODE: ${{ github.run_number }}
       QUNVIEW_KEYSTORE_BASE64: ${{ secrets.QUNVIEW_KEYSTORE_BASE64 }}
       QUNVIEW_KEYSTORE_PASSWORD: ${{ secrets.QUNVIEW_KEYSTORE_PASSWORD }}
       QUNVIEW_KEY_ALIAS: ${{ secrets.QUNVIEW_KEY_ALIAS }}
