@@ -10,7 +10,8 @@ val releaseSigningReady = listOf(
     releaseKeyPassword
 ).all { !it.isNullOrBlank() }
 
-val buildVersionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.takeIf { it > 0 } ?: 1
+// Debug builds keep the baseline version. Release workflow supplies a monotonically increasing code.
+val buildVersionCode = System.getenv("QUNVIEW_VERSION_CODE")?.toIntOrNull()?.takeIf { it > 0 } ?: 1
 val buildVersionName = System.getenv("GITHUB_REF_NAME")
     ?.takeIf { it.startsWith("v") && it.length > 1 }
     ?.removePrefix("v")
