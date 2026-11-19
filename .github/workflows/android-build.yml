@@ -30,6 +30,32 @@ jobs:
         run: gradle -p android lintDebug testDebugUnitTest --stacktrace
       - name: Build debug APK
         run: gradle -p android assembleDebug --stacktrace
+      - name: Preflight signed release build with a disposable test key
+        shell: bash
+        run: |
+          set -euo pipefail
+          keystore="$RUNNER_TEMP/qunview-preflight.jks"
+          storepass="$(openssl rand -hex 24)"
+          keyalias="qunview-preflight"
+          trap 'rm -f "$keystore"' EXIT
+          keytool -genkeypair -noprompt -v \
+            -keystore "$keystore" \
+            -storepass "$storepass" \
+            -keypass "$storepass" \
+            -alias "$keyalias" \
+            -keyalg RSA -keysize 2048 -validity 2 \
+            -dname "CN=QunView Temporary CI Check"
+          QUNVIEW_KEYSTORE_PATH="$keystore" \
+          QUNVIEW_KEYSTORE_PASSWORD="$storepass" \
+          QUNVIEW_KEY_ALIAS="$keyalias" \
+          QUNVIEW_KEY_PASSWORD="$storepass" \
+          QUNVIEW_VERSION_CODE="$GITHUB_RUN_NUMBER" \
+            gradle -p android assembleRelease --stacktrace
+          apk="$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
+          test -n "$apk"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk"
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
