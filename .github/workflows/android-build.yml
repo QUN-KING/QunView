@@ -5,11 +5,16 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android-build.yml"
+      - ".github/workflows/release-apk.yml"
   pull_request:
     paths:
       - "android/**"
       - ".github/workflows/android-build.yml"
+      - ".github/workflows/release-apk.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   debug-apk:
