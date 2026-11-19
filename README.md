@@ -25,4 +25,4 @@ The included Render blueprint uses free service plans. Free hosting may sleep wh
 - Signaling and viewer checks: GitHub Actions workflow `Signaling tests`.
 - CI success confirms automated checks and APK compilation, not real-device operation or the final permanent signing key.
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for setup and the two-Android-device release checklist. Do not call the app release-ready until that checklist has been performed on physical devices.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for setup and the two-Android-device release checklist. The [Android-only permanent signing guide](RELEASE_SIGNING_ANDROID.md) explains how the owner can create the release key in Codespaces without Termux. Do not call the app release-ready until the physical-device checklist has been performed.
