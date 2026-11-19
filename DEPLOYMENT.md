@@ -74,7 +74,7 @@ Do not mark the release ready based on CI or APK creation alone.
 
 The Android build check also runs a signed-release preflight with a temporary, disposable CI key. It verifies that the Release variant builds and that Android's APK signature verifier accepts it. The temporary key is deleted and the resulting Release APK is not uploaded; this does not replace the permanent release keystore or verify its identity.
 
-The signed release workflow is available under GitHub Actions as **Signed Android release APK**. It can be started manually or by pushing a version tag beginning with `v`. Before running it, create a release keystore locally and keep a secure offline backup. Never commit the keystore or its passwords to this repository.
+The signed release workflow is available under GitHub Actions as **Signed Android release APK**. It can be started manually or by pushing a version tag beginning with `v`. Before running it, create a release keystore and keep a secure offline backup. The [Android-only Codespaces guide](RELEASE_SIGNING_ANDROID.md) provides a no-Termux path. Never commit the keystore or its passwords to this repository.
 
 Create a keystore with the alias `qunview-release`, then add these four repository Actions secrets in GitHub Settings → Secrets and variables → Actions:
 
