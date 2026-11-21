@@ -13,6 +13,9 @@ on:
       - ".github/workflows/signaling-tests.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   signaling-tests:
     runs-on: ubuntu-latest
