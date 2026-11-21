@@ -10,6 +10,13 @@ val releaseSigningReady = listOf(
     releaseKeyPassword
 ).all { !it.isNullOrBlank() }
 
+// Debug builds keep the baseline version. Release workflow supplies a monotonically increasing code.
+val buildVersionCode = System.getenv("QUNVIEW_VERSION_CODE")?.toIntOrNull()?.takeIf { it > 0 } ?: 1
+val buildVersionName = System.getenv("GITHUB_REF_NAME")
+    ?.takeIf { it.startsWith("v") && it.length > 1 }
+    ?.removePrefix("v")
+    ?: "0.1.0"
+
 android {
     namespace="com.qunking.qunview"
     compileSdk=35
@@ -18,7 +25,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    defaultConfig { applicationId="com.qunking.qunview"; minSdk=26; targetSdk=35; versionCode=1; versionName="0.1.0" }
+    defaultConfig { applicationId="com.qunking.qunview"; minSdk=26; targetSdk=35; versionCode=buildVersionCode; versionName=buildVersionName }
     signingConfigs {
         if (releaseSigningReady) {
             create("release") {
@@ -42,4 +49,5 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("io.github.webrtc-sdk:android:150.7871.01")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("junit:junit:4.13.2")
 }

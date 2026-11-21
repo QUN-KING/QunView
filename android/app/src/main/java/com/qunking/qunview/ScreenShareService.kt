@@ -28,7 +28,7 @@ class ScreenShareService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP_SHARING -> { clearViewerRequest(); clearSavedViewerLink(); streamer?.stop(); streamer = null; stopSelf(); return START_NOT_STICKY }
+            ACTION_STOP_SHARING -> { isActive = false; sendBroadcast(Intent(ACTION_SHARING_STOPPED).setPackage(packageName)); clearViewerRequest(); clearSavedViewerLink(); streamer?.stop(); streamer = null; stopSelf(); return START_NOT_STICKY }
             ACTION_APPROVE_VIEWER -> {
                 if (viewerRequestPending) {
                     clearViewerRequest()
@@ -56,6 +56,7 @@ class ScreenShareService : Service() {
         }
         createNotificationChannels()
         isActive = true
+        sendBroadcast(Intent(ACTION_SHARING_STARTED).setPackage(packageName))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, buildNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
@@ -82,6 +83,7 @@ class ScreenShareService : Service() {
         streamer = WebRtcScreenStreamer(
             applicationContext,
             resultData,
+            intent?.getBooleanExtra(EXTRA_ALLOW_REMOTE_ASSISTANCE, false) ?: false,
             onSessionReady = { viewerLink ->
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                     .putString(PENDING_VIEWER_LINK, viewerLink).apply()
@@ -192,7 +194,9 @@ class ScreenShareService : Service() {
 
     override fun onDestroy() {
         if (activeInstance === this) activeInstance = null
+        val wasActive = isActive
         isActive = false
+        if (wasActive) sendBroadcast(Intent(ACTION_SHARING_STOPPED).setPackage(packageName))
         clearViewerRequest()
         clearSavedViewerLink()
         streamer?.stop()
@@ -244,6 +248,8 @@ class ScreenShareService : Service() {
             private set
 
         const val ACTION_STOP_SHARING = "com.qunking.qunview.STOP_SHARING"
+        const val ACTION_SHARING_STARTED = "com.qunking.qunview.SHARING_STARTED"
+        const val ACTION_SHARING_STOPPED = "com.qunking.qunview.SHARING_STOPPED"
         const val ACTION_APPROVE_VIEWER = "com.qunking.qunview.APPROVE_VIEWER"
         const val ACTION_DENY_VIEWER = "com.qunking.qunview.DENY_VIEWER"
         const val ACTION_APPROVE_REMOTE_CONTROL = "com.qunking.qunview.APPROVE_REMOTE_CONTROL"
@@ -252,6 +258,7 @@ class ScreenShareService : Service() {
         const val ACTION_REMOTE_CONTROL_REQUEST = "com.qunking.qunview.REMOTE_CONTROL_REQUEST"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
+        const val EXTRA_ALLOW_REMOTE_ASSISTANCE = "allow_remote_assistance"
         const val ACTION_SESSION_READY = "com.qunking.qunview.SESSION_READY"
         const val ACTION_ERROR = "com.qunking.qunview.SHARING_ERROR"
         const val EXTRA_VIEWER_LINK = "viewer_link"
@@ -259,8 +266,8 @@ class ScreenShareService : Service() {
         const val PREFS_NAME = "qunview_state"
         const val PENDING_VIEWER_LINK = "pending_viewer_link"
         private const val TAG = "QunViewService"
-        private const val CHANNEL_ID = "qunview_screen_share"
-        private const val REQUEST_CHANNEL_ID = "qunview_viewer_requests"
+        const val CHANNEL_ID = "qunview_screen_share"
+        const val REQUEST_CHANNEL_ID = "qunview_viewer_requests"
         private const val NOTIFICATION_ID = 41
         private const val VIEWER_REQUEST_NOTIFICATION_ID = 42
         private const val CONTROL_REQUEST_NOTIFICATION_ID = 43

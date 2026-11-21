@@ -31,6 +31,7 @@ import java.util.concurrent.Executors
 class WebRtcScreenStreamer(
     private val context: Context,
     private val projectionPermission: Intent,
+    private val allowRemoteAssistance: Boolean,
     private val onSessionReady: (String) -> Unit,
     private val onError: (String) -> Unit,
     private val onViewerRequest: () -> Unit,
@@ -206,7 +207,7 @@ class WebRtcScreenStreamer(
                         when (command.optString("action")) {
                             "request-control" -> {
                                 val accessibilityService = QunViewAccessibilityService.instance
-                                if (viewerApproved && accessibilityService != null) {
+                                if (RemoteAssistancePolicy.canRequestControl(allowRemoteAssistance, viewerApproved, accessibilityService != null)) {
                                     if (remoteControlApproved && approvedAccessibilityService === accessibilityService) {
                                         sendControlReply("control-approved")
                                     } else {
@@ -224,9 +225,8 @@ class WebRtcScreenStreamer(
                             "release-control" -> revokeRemoteControlApproval()
                             "back", "home", "tap", "swipe" -> {
                                 val accessibilityService = QunViewAccessibilityService.instance
-                                if (viewerApproved && remoteControlApproved &&
-                                    accessibilityService != null &&
-                                    approvedAccessibilityService === accessibilityService) {
+                                if (RemoteAssistancePolicy.canExecuteControl(allowRemoteAssistance, viewerApproved, remoteControlApproved, accessibilityService != null) &&
+                                    accessibilityService != null && approvedAccessibilityService === accessibilityService) {
                                     accessibilityService.performRemoteCommand(command)
                                 } else if (remoteControlApproved) {
                                     revokeRemoteControlApproval()
@@ -247,7 +247,7 @@ class WebRtcScreenStreamer(
 
     @Synchronized fun approveRemoteControl(): Boolean {
         val accessibilityService = QunViewAccessibilityService.instance
-        if (stopped || !viewerApproved || accessibilityService == null) {
+        if (stopped || !RemoteAssistancePolicy.canRequestControl(allowRemoteAssistance, viewerApproved, accessibilityService != null)) {
             revokeRemoteControlApproval()
             sendControlReply("control-denied")
             return false

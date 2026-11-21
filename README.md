@@ -20,8 +20,9 @@ The included Render blueprint uses free service plans. Free hosting may sleep wh
 
 ## Build and test
 
-- Android debug APK: GitHub Actions workflow `Android build check`.
+- Android lint, unit tests, debug APK build, and a signed-release preflight using a disposable CI-only key: GitHub Actions workflow `Android build check`.
+- The preflight verifies that the Release variant builds and its APK signature is valid; its temporary key is deleted and no release APK is published from that step.
 - Signaling and viewer checks: GitHub Actions workflow `Signaling tests`.
-- CI success confirms automated checks and APK compilation, not real-device operation.
+- CI success confirms automated checks and APK compilation, not real-device operation or the final permanent signing key.
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for setup and the two-Android-device release checklist. Do not call the app release-ready until that checklist has been performed on physical devices.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for setup and the two-Android-device release checklist. The [Android-only permanent signing guide](RELEASE_SIGNING_ANDROID.md) explains how the owner can create the release key in Codespaces without Termux. Do not call the app release-ready until the physical-device checklist has been performed.
