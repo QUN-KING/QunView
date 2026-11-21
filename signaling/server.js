@@ -137,7 +137,10 @@ function cleanSession(id) {
   clearTimeout(session.timer);
   for (const client of session.clients) {
     client.sessionId = undefined;
-    if (client.readyState === WebSocket.OPEN) client.close(1000, "Session ended");
+    if (client.readyState === WebSocket.OPEN) {
+      if (client.role === "viewer") send(client, { type: "session-ended", viewerId: client.viewerId });
+      client.close(1000, "Session ended");
+    }
   }
 }
 function requestViewerApproval(session, viewerId, viewer) {
