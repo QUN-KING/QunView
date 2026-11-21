@@ -96,7 +96,7 @@ test("session creation, viewer approval and signaling relay are enforced", async
   const waitingPromise = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
   const requestPromise = nextMessage(sender, m => m.type === "viewer-join-request");
   send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
-  await Promise.all([waitingPromise, requestPromise]);
+  const [, joinRequest] = await Promise.all([waitingPromise, requestPromise]);
 
   const offer = { type: "offer", data: { type: "offer", sdp: "v=0\\r\\n" } };
   send(sender, offer);
@@ -104,16 +104,16 @@ test("session creation, viewer approval and signaling relay are enforced", async
   assert.match(deniedRelay.message, /not been approved/);
 
   const approvedViewerPromise = nextMessage(viewer, m => m.type === "sender-approved-viewer");
-  send(sender, { type: "approve-viewer" });
+  send(sender, { type: "approve-viewer", viewerId: joinRequest.viewerId });
   await approvedViewerPromise;
   const relayedOffer = nextMessage(viewer, m => m.type === "offer");
-  send(sender, offer);
-  assert.deepEqual(await relayedOffer, offer);
+  send(sender, { ...offer, viewerId: joinRequest.viewerId });
+  assert.deepEqual(await relayedOffer, { ...offer, viewerId: joinRequest.viewerId });
 
   const answer = { type: "answer", data: { type: "answer", sdp: "v=0\\r\\n" } };
   const relayedAnswer = nextMessage(sender, m => m.type === "answer");
   send(viewer, answer);
-  assert.deepEqual(await relayedAnswer, answer);
+  assert.deepEqual(await relayedAnswer, { ...answer, viewerId: joinRequest.viewerId });
 
   const viewerClosed = new Promise(resolve => viewer.once("close", resolve));
   send(sender, { type: "end-session" });
@@ -122,23 +122,58 @@ test("session creation, viewer approval and signaling relay are enforced", async
   viewer.close();
 });
 
-test("a second viewer cannot occupy an already-used session", async () => {
+test("multiple viewers are independently approved and routed", async () => {
   const sender = await connect(wsUrl);
   const createdPromise = nextMessage(sender, m => m.type === "session-created");
   send(sender, { type: "create-session" });
   const created = await createdPromise;
-  const first = await connect(wsUrl, "https://qunview-viewer.onrender.com");
-  const firstWaiting = nextMessage(first, m => m.type === "waiting-for-sender-approval");
-  const senderRequest = nextMessage(sender, m => m.type === "viewer-join-request");
-  send(first, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
-  await Promise.all([firstWaiting, senderRequest]);
+  const viewers = await Promise.all([
+    connect(wsUrl, "https://qunview-viewer.onrender.com"),
+    connect(wsUrl, "https://qunview-viewer.onrender.com")
+  ]);
+  const joins = viewers.map(viewer => ({
+    waiting: nextMessage(viewer, m => m.type === "waiting-for-sender-approval"),
+    request: nextMessage(sender, m => m.type === "viewer-join-request")
+  }));
+  for (const viewer of viewers) send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
+  const joined = await Promise.all(joins);
+  const ids = joined.map(pair => pair[1].viewerId);
+  assert.equal(new Set(ids).size, 2);
 
-  const second = await connect(wsUrl, "https://qunview-viewer.onrender.com");
-  const rejected = nextMessage(second, m => m.type === "error");
-  send(second, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
-  assert.match((await rejected).message, /already has a viewer/);
+  for (let i = 0; i < viewers.length; i++) {
+    const approved = nextMessage(viewers[i], m => m.type === "sender-approved-viewer");
+    send(sender, { type: "approve-viewer", viewerId: ids[i] });
+    assert.equal((await approved).viewerId, ids[i]);
+  }
+
+  const offerA = { type: "offer", viewerId: ids[0], data: { type: "offer", sdp: "offer-A" } };
+  const offerB = { type: "offer", viewerId: ids[1], data: { type: "offer", sdp: "offer-B" } };
+  const gotA = nextMessage(viewers[0], m => m.type === "offer");
+  const gotB = nextMessage(viewers[1], m => m.type === "offer");
+  send(sender, offerA);
+  send(sender, offerB);
+  assert.deepEqual(await gotA, offerA);
+  assert.deepEqual(await gotB, offerB);
+
+  const answerA = nextMessage(sender, m => m.type === "answer" && m.viewerId === ids[0]);
+  const answerB = nextMessage(sender, m => m.type === "answer" && m.viewerId === ids[1]);
+  send(viewers[0], { type: "answer", data: { type: "answer", sdp: "answer-A" } });
+  send(viewers[1], { type: "answer", data: { type: "answer", sdp: "answer-B" } });
+  assert.equal((await answerA).data.sdp, "answer-A");
+  assert.equal((await answerB).data.sdp, "answer-B");
+
+  const deniedViewer = await connect(wsUrl, "https://qunview-viewer.onrender.com");
+  const deniedWaiting = nextMessage(deniedViewer, m => m.type === "waiting-for-sender-approval");
+  const deniedRequest = nextMessage(sender, m => m.type === "viewer-join-request");
+  send(deniedViewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
+  const [, pending] = await Promise.all([deniedWaiting, deniedRequest]);
+  const denied = nextMessage(deniedViewer, m => m.type === "viewer-denied");
+  send(sender, { type: "deny-viewer", viewerId: pending.viewerId });
+  await denied;
+
   send(sender, { type: "end-session" });
-  sender.close(); first.close(); second.close();
+  sender.close();
+  for (const viewer of [...viewers, deniedViewer]) viewer.close();
 });
 
 
@@ -154,7 +189,7 @@ test("an approved connected viewer keeps consent when the sender resumes", async
   send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
   await Promise.all([waiting, approvalRequest]);
   const approvedNotice = nextMessage(viewer, m => m.type === "sender-approved-viewer");
-  send(sender, { type: "approve-viewer" });
+  send(sender, { type: "approve-viewer", viewerId: joinRequest.viewerId });
   await approvedNotice;
 
   const disconnected = nextMessage(viewer, m => m.type === "sender-disconnected");
@@ -165,14 +200,14 @@ test("an approved connected viewer keeps consent when the sender resumes", async
   const resumed = nextMessage(resumedSender, m => m.type === "session-resumed");
   const reconnected = nextMessage(viewer, m => m.type === "sender-reconnected");
   send(resumedSender, { type: "resume-session", sessionId: created.sessionId, resumeToken: created.resumeToken });
-  assert.equal((await resumed).viewerApproved, true);
+  assert.equal((await resumed).viewerCount, 1);
   await reconnected;
 
   // The retained approval authorizes signaling without another approval prompt.
   const offer = { type: "offer", data: { type: "offer", sdp: "v=0\\r\\n" } };
   const relayed = nextMessage(viewer, m => m.type === "offer");
-  send(resumedSender, offer);
-  assert.deepEqual(await relayed, offer);
+  send(resumedSender, { ...offer, viewerId: joinRequest.viewerId });
+  assert.deepEqual(await relayed, { ...offer, viewerId: joinRequest.viewerId });
 
   // Once that viewer socket leaves, a later viewer must obtain fresh approval.
   const viewerClosed = new Promise(resolve => viewer.once("close", resolve));
@@ -198,7 +233,7 @@ test("an unapproved viewer still needs approval after sender resumes", async () 
   const waiting = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
   const request = nextMessage(sender, m => m.type === "viewer-join-request");
   send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
-  await Promise.all([waiting, request]);
+  const [, joinRequest] = await Promise.all([waiting, request]);
 
   const disconnected = nextMessage(viewer, m => m.type === "sender-disconnected");
   sender.close();
@@ -208,7 +243,7 @@ test("an unapproved viewer still needs approval after sender resumes", async () 
   const newWaiting = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
   const newRequest = nextMessage(resumedSender, m => m.type === "viewer-join-request");
   send(resumedSender, { type: "resume-session", sessionId: created.sessionId, resumeToken: created.resumeToken });
-  assert.equal((await resumed).viewerApproved, false);
+  assert.equal((await resumed).viewerCount, 1);
   await Promise.all([newWaiting, newRequest]);
 
   send(resumedSender, { type: "end-session" });
@@ -231,14 +266,14 @@ test("a socket already joined to one session cannot resume another session", asy
   const waiting = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
   const request = nextMessage(senderA, m => m.type === "viewer-join-request");
   send(viewer, { type: "join-session", sessionId: sessionA.sessionId, viewerToken: sessionA.viewerToken });
-  await Promise.all([waiting, request]);
+  const [, joinRequest] = await Promise.all([waiting, request]);
 
   const rejected = nextMessage(viewer, m => m.type === "error");
   send(viewer, { type: "resume-session", sessionId: sessionB.sessionId, resumeToken: sessionB.resumeToken });
   assert.match((await rejected).message, /already belongs to a session/);
 
   const approved = nextMessage(viewer, m => m.type === "sender-approved-viewer");
-  send(senderA, { type: "approve-viewer" });
+  send(senderA, { type: "approve-viewer", viewerId: joinRequest.viewerId });
   await approved;
 
   send(senderA, { type: "end-session" });
