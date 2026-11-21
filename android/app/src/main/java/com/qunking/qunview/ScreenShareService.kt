@@ -136,7 +136,7 @@ class ScreenShareService : Service() {
                 Notification.Builder(this)
             }
         return builder.setContentTitle("QunView: Viewer request")
-            .setContentText("A person is asking to view your screen. Approve this viewer only if you trust them.")
+            .setContentText("Viewer ${viewerId.take(6)} is asking to view your screen. Approve only if you trust them.")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_CALL)
