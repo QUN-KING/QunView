@@ -36,9 +36,7 @@ class WebRtcScreenStreamer(
     private val onSessionReady: (String) -> Unit,
     private val onError: (String) -> Unit,
     private val onViewerRequest: (String) -> Unit,
-    private val onRemoteControlRequest: () -> Unit,
     private val onViewerLeft: (String) -> Unit,
-    private val onRemoteControlRevoked: () -> Unit,
     private val onStopped: () -> Unit
 ) {
     companion object {
@@ -261,7 +259,13 @@ class WebRtcScreenStreamer(
         connection.remoteControlApproved = false
         connection.remoteControlRequestPending = false
         connection.approvedAccessibilityService = null
-        if (hadRemoteControlState) onRemoteControlRevoked()
+    }
+
+    @Synchronized fun denyRemoteControl() {
+        viewers.values.forEach { connection ->
+            revokeRemoteControlApproval(connection)
+            sendControlReply(connection, "control-denied")
+        }
     }
 
     private fun sendControlReply(connection: ViewerConnection, action: String) {
