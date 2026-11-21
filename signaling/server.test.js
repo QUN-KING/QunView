@@ -137,7 +137,7 @@ test("multiple viewers are independently approved and routed", async () => {
   }));
   for (const viewer of viewers) send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
   const joined = await Promise.all(joins);
-  const ids = joined.map(pair => pair[1].viewerId);
+  const ids = joined.map(pair => pair.request.viewerId);
   assert.equal(new Set(ids).size, 2);
 
   for (let i = 0; i < viewers.length; i++) {
@@ -187,7 +187,7 @@ test("an approved connected viewer keeps consent when the sender resumes", async
   const waiting = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
   const approvalRequest = nextMessage(sender, m => m.type === "viewer-join-request");
   send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
-  await Promise.all([waiting, approvalRequest]);
+  const [, joinRequest] = await Promise.all([waiting, approvalRequest]);
   const approvedNotice = nextMessage(viewer, m => m.type === "sender-approved-viewer");
   send(sender, { type: "approve-viewer", viewerId: joinRequest.viewerId });
   await approvedNotice;
