@@ -131,16 +131,16 @@ test("multiple viewers are independently approved and routed", async () => {
     connect(wsUrl, "https://qunview-viewer.onrender.com"),
     connect(wsUrl, "https://qunview-viewer.onrender.com")
   ]);
-  const joins = viewers.map(viewer => ({
-    waiting: nextMessage(viewer, m => m.type === "waiting-for-sender-approval"),
-    request: nextMessage(sender, m => m.type === "viewer-join-request")
-  }));
-  for (const viewer of viewers) send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
-  const joined = await Promise.all(joins.map(async pair => {
-    const [waiting, request] = await Promise.all([pair.waiting, pair.request]);
-    return { waiting, request };
-  }));
-  const ids = joined.map(pair => pair.request.viewerId);
+  const firstWaiting = nextMessage(viewers[0], m => m.type === "waiting-for-sender-approval");
+  const firstRequest = nextMessage(sender, m => m.type === "viewer-join-request");
+  send(viewers[0], { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
+  const [, firstJoin] = await Promise.all([firstWaiting, firstRequest]);
+
+  const secondWaiting = nextMessage(viewers[1], m => m.type === "waiting-for-sender-approval");
+  const secondRequest = nextMessage(sender, m => m.type === "viewer-join-request");
+  send(viewers[1], { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
+  const [, secondJoin] = await Promise.all([secondWaiting, secondRequest]);
+  const ids = [firstJoin.viewerId, secondJoin.viewerId];
   assert.equal(new Set(ids).size, 2);
 
   for (let i = 0; i < viewers.length; i++) {
