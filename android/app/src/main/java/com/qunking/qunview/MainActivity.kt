@@ -54,7 +54,6 @@ class MainActivity : ComponentActivity() {
                     AlertDialog.Builder(this@MainActivity).setTitle("QunView").setMessage(message).setPositiveButton("OK", null).show()
                     refreshMainButton()
                 }
-                ScreenShareService.ACTION_VIEWER_REQUEST -> showViewerApproval()
             }
         }
     }
@@ -89,7 +88,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         val status = TextView(this).apply {
-            text = "You approve every viewer. You can stop sharing at any time."
+            text = "Approve or deny each viewer from their notification. You can stop sharing at any time."
             textSize = 14f
             setPadding(24, 12, 24, 12)
         }
@@ -118,7 +117,6 @@ class MainActivity : ComponentActivity() {
             addAction(ScreenShareService.ACTION_ERROR)
             addAction(ScreenShareService.ACTION_SHARING_STARTED)
             addAction(ScreenShareService.ACTION_SHARING_STOPPED)
-            addAction(ScreenShareService.ACTION_VIEWER_REQUEST)
         }
         ContextCompat.registerReceiver(this, serviceEvents, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         receiverRegistered = true
@@ -201,18 +199,6 @@ class MainActivity : ComponentActivity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
     }
-
-    private fun showViewerApproval() {
-        if (isFinishing || isDestroyed) return
-        AlertDialog.Builder(this)
-            .setTitle("Viewer wants to see your screen")
-            .setMessage("Allow this person to view your live screen? Nothing is shared with this viewer until you choose Allow. You can stop sharing at any time.")
-            .setCancelable(false)
-            .setPositiveButton("Allow") { _, _ -> startService(Intent(this, ScreenShareService::class.java).setAction(ScreenShareService.ACTION_APPROVE_VIEWER)) }
-            .setNegativeButton("Deny") { _, _ -> startService(Intent(this, ScreenShareService::class.java).setAction(ScreenShareService.ACTION_DENY_VIEWER)) }
-            .show()
-    }
-
 
     private fun isAccessibilityServiceEnabled(): Boolean {
         val expected = packageName + "/" + QunViewAccessibilityService::class.java.name
