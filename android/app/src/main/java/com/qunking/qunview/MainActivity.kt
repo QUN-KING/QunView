@@ -178,8 +178,11 @@ class MainActivity : ComponentActivity() {
         val preferences = getSharedPreferences("qunview_preferences", MODE_PRIVATE)
         if (preferences.getBoolean("remote_assistance_choice_saved", false)) {
             // Remember the owner's first choice; do not repeat the same disclosure every start.
-            allowRemoteAssistanceForSession =
-                preferences.getBoolean("remote_assistance_enabled", false) && isAccessibilityServiceEnabled()
+            // Detect if the owner enabled Accessibility later in Android Settings.
+            allowRemoteAssistanceForSession = isAccessibilityServiceEnabled()
+            if (allowRemoteAssistanceForSession) {
+                preferences.edit().putBoolean("remote_assistance_enabled", true).apply()
+            }
             requestScreenPermission()
             return
         }
@@ -210,14 +213,6 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    private fun showRemoteControlApproval() {
-        if (isFinishing || isDestroyed) return
-        AlertDialog.Builder(this)
-            .setTitle("Remote assistance")
-            .setMessage("Remote Assistance is already enabled. Only viewers you approve can use Back, Home, Tap and Swipe.")
-            .setPositiveButton("OK", null)
-            .show()
-    }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
         val expected = packageName + "/" + QunViewAccessibilityService::class.java.name
