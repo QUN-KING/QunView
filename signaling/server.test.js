@@ -136,7 +136,10 @@ test("multiple viewers are independently approved and routed", async () => {
     request: nextMessage(sender, m => m.type === "viewer-join-request")
   }));
   for (const viewer of viewers) send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
-  const joined = await Promise.all(joins);
+  const joined = await Promise.all(joins.map(async pair => {
+    const [waiting, request] = await Promise.all([pair.waiting, pair.request]);
+    return { waiting, request };
+  }));
   const ids = joined.map(pair => pair.request.viewerId);
   assert.equal(new Set(ids).size, 2);
 
