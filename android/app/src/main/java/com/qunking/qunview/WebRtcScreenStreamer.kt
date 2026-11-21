@@ -208,15 +208,13 @@ class WebRtcScreenStreamer(
                             "request-control" -> {
                                 val accessibilityService = QunViewAccessibilityService.instance
                                 if (RemoteAssistancePolicy.canRequestControl(allowRemoteAssistance, viewerApproved, accessibilityService != null)) {
-                                    if (remoteControlApproved && approvedAccessibilityService === accessibilityService) {
-                                        sendControlReply("control-approved")
-                                    } else {
-                                        revokeRemoteControlApproval()
-                                        if (!remoteControlRequestPending) {
-                                            remoteControlRequestPending = true
-                                            onRemoteControlRequest()
-                                        }
-                                    }
+                                    // The owner's one-time Android Accessibility consent plus
+                                    // approval of this viewer covers Remote Assistance. Do not
+                                    // ask for a second per-session permission.
+                                    remoteControlRequestPending = false
+                                    approvedAccessibilityService = accessibilityService
+                                    remoteControlApproved = true
+                                    sendControlReply("control-approved")
                                 } else {
                                     revokeRemoteControlApproval()
                                     sendControlReply("control-denied")
