@@ -21,11 +21,9 @@ class ScreenShareService : Service() {
     }
 
     fun revokeRemoteControlForAccessibilityChange() {
-        clearRemoteControlRequest()
         streamer?.denyRemoteControl()
     }
     private val pendingViewerIds = ConcurrentHashMap.newKeySet<String>()
-    @Volatile private var remoteControlRequestPending = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -38,16 +36,6 @@ class ScreenShareService : Service() {
                 }
                 return START_NOT_STICKY
             }
-            ACTION_APPROVE_REMOTE_CONTROL -> {
-                // A stale notification or delayed activity action must never grant consent.
-                // Only accept approval while the current viewer's request is still pending.
-                if (remoteControlRequestPending) {
-                    clearRemoteControlRequest()
-                    if (streamer?.approveRemoteControl() == true) showRemoteControlActiveNotification()
-                }
-                return START_NOT_STICKY
-            }
-            ACTION_DENY_REMOTE_CONTROL -> { clearRemoteControlRequest(); streamer?.denyRemoteControl(); return START_NOT_STICKY }
             ACTION_DENY_VIEWER -> {
                 val viewerId = intent.getStringExtra(EXTRA_VIEWER_ID)
                 if (viewerId != null && pendingViewerIds.remove(viewerId)) {
@@ -97,9 +85,7 @@ class ScreenShareService : Service() {
                 Log.w(TAG, "Temporary connection issue: " + message)
             },
             onViewerRequest = { viewerId -> showViewerRequestNotification(viewerId) },
-            onRemoteControlRequest = { showRemoteControlRequestNotification(); sendBroadcast(Intent(ACTION_REMOTE_CONTROL_REQUEST).setPackage(packageName)) },
             onViewerLeft = { viewerId -> clearViewerRequest(viewerId) },
-            onRemoteControlRevoked = { clearRemoteControlRequest() },
             onStopped = { clearAllViewerRequests(); clearSavedViewerLink(); stopSelf() }
         )
         try {
@@ -118,46 +104,8 @@ class ScreenShareService : Service() {
             .notify(viewerNotificationId(viewerId), buildViewerRequestNotification(viewerId))
     }
 
-    private fun showRemoteControlRequestNotification() {
-        if (remoteControlRequestPending) return
-        remoteControlRequestPending = true
-        val allow = PendingIntent.getService(this, 45, Intent(this, ScreenShareService::class.java).setAction(ACTION_APPROVE_REMOTE_CONTROL), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val deny = PendingIntent.getService(this, 46, Intent(this, ScreenShareService::class.java).setAction(ACTION_DENY_REMOTE_CONTROL), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, REQUEST_CHANNEL_ID) else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
-        getSystemService(NotificationManager::class.java).notify(CONTROL_REQUEST_NOTIFICATION_ID,
-            builder.setContentTitle("QunView: Remote control request")
-                .setContentText("Viewer wants to tap or swipe. Allow only if you trust them.")
-                .setSmallIcon(android.R.drawable.ic_menu_view).setOngoing(true)
-                .addAction(android.R.drawable.checkbox_on_background, "Allow controls", allow)
-                .addAction(android.R.drawable.ic_delete, "Deny", deny).build())
-    }
-
-    private fun showRemoteControlActiveNotification() {
-        val disable = PendingIntent.getService(this, 47,
-            Intent(this, ScreenShareService::class.java).setAction(ACTION_DENY_REMOTE_CONTROL),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            Notification.Builder(this, REQUEST_CHANNEL_ID) else {
-                @Suppress("DEPRECATION")
-                Notification.Builder(this)
-            }
-        getSystemService(NotificationManager::class.java).notify(CONTROL_REQUEST_NOTIFICATION_ID,
-            builder.setContentTitle("QunView: Remote controls are ON")
-                .setContentText("Tap Disable controls to revoke remote assistance immediately.")
-                .setSmallIcon(android.R.drawable.ic_menu_view).setOngoing(true)
-                .addAction(android.R.drawable.ic_delete, "Disable controls", disable).build())
-    }
-
     private fun clearSavedViewerLink() {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().remove(PENDING_VIEWER_LINK).apply()
-    }
-
-    private fun clearRemoteControlRequest() {
-        remoteControlRequestPending = false
-        getSystemService(NotificationManager::class.java).cancel(CONTROL_REQUEST_NOTIFICATION_ID)
     }
 
     private fun viewerNotificationId(viewerId: String): Int =
@@ -170,7 +118,6 @@ class ScreenShareService : Service() {
 
     private fun clearAllViewerRequests() {
         pendingViewerIds.toList().forEach { clearViewerRequest(it) }
-        clearRemoteControlRequest()
     }
 
     private fun buildViewerRequestNotification(viewerId: String): Notification {
@@ -262,10 +209,7 @@ class ScreenShareService : Service() {
         const val ACTION_SHARING_STOPPED = "com.qunking.qunview.SHARING_STOPPED"
         const val ACTION_APPROVE_VIEWER = "com.qunking.qunview.APPROVE_VIEWER"
         const val ACTION_DENY_VIEWER = "com.qunking.qunview.DENY_VIEWER"
-        const val ACTION_APPROVE_REMOTE_CONTROL = "com.qunking.qunview.APPROVE_REMOTE_CONTROL"
-        const val ACTION_DENY_REMOTE_CONTROL = "com.qunking.qunview.DENY_REMOTE_CONTROL"
         const val ACTION_VIEWER_REQUEST = "com.qunking.qunview.VIEWER_REQUEST"
-        const val ACTION_REMOTE_CONTROL_REQUEST = "com.qunking.qunview.REMOTE_CONTROL_REQUEST"
         const val EXTRA_VIEWER_ID = "viewer_id"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
@@ -280,6 +224,5 @@ class ScreenShareService : Service() {
         const val CHANNEL_ID = "qunview_screen_share"
         const val REQUEST_CHANNEL_ID = "qunview_viewer_requests"
         private const val NOTIFICATION_ID = 41
-        private const val CONTROL_REQUEST_NOTIFICATION_ID = 43
     }
 }
