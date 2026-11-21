@@ -55,7 +55,6 @@ class MainActivity : ComponentActivity() {
                     refreshMainButton()
                 }
                 ScreenShareService.ACTION_VIEWER_REQUEST -> showViewerApproval()
-                ScreenShareService.ACTION_REMOTE_CONTROL_REQUEST -> showRemoteControlApproval()
             }
         }
     }
@@ -80,7 +79,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val title = TextView(this).apply {
-            text = "QunView\n\nShare your screen only when you choose. The main button starts or stops sharing. Android will ask for screen-capture approval. Remote control needs your separate Accessibility approval and can be enabled during setup."
+            text = "QunView\n\nThe main button starts or stops sharing. Android asks for screen-capture approval each time. Enable Remote Assistance once in Android Accessibility settings; after that, approving a viewer also allows that viewer to use Back, Home, Tap and Swipe."
             textSize = 18f
             setPadding(24, 24, 24, 24)
         }
@@ -120,7 +119,6 @@ class MainActivity : ComponentActivity() {
             addAction(ScreenShareService.ACTION_SHARING_STARTED)
             addAction(ScreenShareService.ACTION_SHARING_STOPPED)
             addAction(ScreenShareService.ACTION_VIEWER_REQUEST)
-            addAction(ScreenShareService.ACTION_REMOTE_CONTROL_REQUEST)
         }
         ContextCompat.registerReceiver(this, serviceEvents, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         receiverRegistered = true
@@ -185,28 +183,20 @@ class MainActivity : ComponentActivity() {
             requestScreenPermission()
             return
         }
-        val accessibilityEnabled = isAccessibilityServiceEnabled()
-        AlertDialog.Builder(this)
-            .setTitle("Optional Remote Assistance")
-            .setMessage("Remote Assistance is optional. If enabled, an approved viewer can use Back, Home, Tap and Swipe only after your separate approval for that session. QunView does not read window text or collect other-app content through Accessibility. Screen-only sharing works without it.")
-            .setPositiveButton(if (accessibilityEnabled) "Enable once" else "Set up once") { _, _ ->
-                if (accessibilityEnabled) {
-                    allowRemoteAssistanceForSession = true
-                    preferences.edit().putBoolean("remote_assistance_choice_saved", true)
-                        .putBoolean("remote_assistance_enabled", true).apply()
-                    requestScreenPermission()
-                } else {
-                    startAfterAccessibilitySettings = true
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
-            }
-            .setNegativeButton("Screen sharing only") { _, _ ->
-                allowRemoteAssistanceForSession = false
-                preferences.edit().putBoolean("remote_assistance_choice_saved", true)
-                    .putBoolean("remote_assistance_enabled", false).apply()
-                requestScreenPermission()
-            }
-            .show()
+        if (isAccessibilityServiceEnabled()) {
+            // The Android Accessibility permission is the one-time Remote Assistance consent.
+            // Do not show a second in-app consent dialog.
+            allowRemoteAssistanceForSession = true
+            preferences.edit().putBoolean("remote_assistance_choice_saved", true)
+                .putBoolean("remote_assistance_enabled", true).apply()
+            requestScreenPermission()
+        } else {
+            // Open Android's own permission screen only on the first setup attempt.
+            // If the owner skips it, screen sharing still works; later enabling it in
+            // Android Settings is detected automatically on the next start.
+            startAfterAccessibilitySettings = true
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
     }
 
     private fun showViewerApproval() {
@@ -223,15 +213,9 @@ class MainActivity : ComponentActivity() {
     private fun showRemoteControlApproval() {
         if (isFinishing || isDestroyed) return
         AlertDialog.Builder(this)
-            .setTitle("Remote control request")
-            .setMessage("The viewer wants to tap, swipe, Back or Home on this phone. Allow only if you trust this person. You can disable controls from the QunView notification at any time.")
-            .setCancelable(false)
-            .setPositiveButton("Allow controls") { _, _ ->
-                startService(Intent(this, ScreenShareService::class.java).setAction(ScreenShareService.ACTION_APPROVE_REMOTE_CONTROL))
-            }
-            .setNegativeButton("Deny") { _, _ ->
-                startService(Intent(this, ScreenShareService::class.java).setAction(ScreenShareService.ACTION_DENY_REMOTE_CONTROL))
-            }
+            .setTitle("Remote assistance")
+            .setMessage("Remote Assistance is already enabled. Only viewers you approve can use Back, Home, Tap and Swipe.")
+            .setPositiveButton("OK", null)
             .show()
     }
 
