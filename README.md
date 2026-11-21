@@ -5,12 +5,13 @@ QunView is an Android screen-sharing and optional remote-assistance project.
 ## Main behavior
 
 - The Android owner starts sharing and approves Android's system screen-capture prompt.
-- The owner separately approves each new viewer before video is sent.
-- Remote controls (Back, Home, tap, swipe) are optional and require both Android Accessibility enablement and a separate in-session owner approval.
+- The owner approves each viewer separately; each viewer gets an independent WebRTC connection and can be denied or disconnected without affecting other viewers.
+- The signaling service initially allows up to four concurrent viewers per session (configurable up to eight); actual performance depends on the phone's upload bandwidth, CPU, battery and network.
+- Remote controls (Back, Home, tap, swipe) require the owner's one-time Android Accessibility enablement. Approving a viewer also permits that approved viewer to use those controls; no second per-viewer control prompt is shown. If Accessibility is off, that viewer is view-only.
 - The owner can stop sharing from the persistent Android notification or the app.
 - Screen frames are not recorded or saved by QunView.
 - A temporary sender signaling interruption can recover without asking the same still-connected viewer to request viewing permission again. A new viewer socket needs fresh approval.
-- Remote-control approval is reset on reconnect.
+- A viewer's viewing approval is retained only for that same connected viewer socket during a temporary sender signaling interruption; new viewer connections require fresh owner approval.
 
 Android may require a fresh screen-capture approval after the capture service/process stops or the phone restarts. QunView cannot silently bypass that Android security requirement.
 
