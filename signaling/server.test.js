@@ -165,6 +165,16 @@ test("multiple viewers are independently approved and routed", async () => {
   assert.equal((await answerA).data.sdp, "answer-A");
   assert.equal((await answerB).data.sdp, "answer-B");
 
+  // One viewer leaving must not interrupt another approved viewer.
+  const viewerLeft = nextMessage(sender, m => m.type === "viewer-left" && m.viewerId === ids[0]);
+  const firstClosed = new Promise(resolve => viewers[0].once("close", resolve));
+  viewers[0].close();
+  await Promise.all([viewerLeft, firstClosed]);
+  const stillLiveOffer = { type: "offer", viewerId: ids[1], data: { type: "offer", sdp: "still-live" } };
+  const stillLive = nextMessage(viewers[1], m => m.type === "offer");
+  send(sender, stillLiveOffer);
+  assert.deepEqual(await stillLive, stillLiveOffer);
+
   const deniedViewer = await connect(wsUrl, "https://qunview-viewer.onrender.com");
   const deniedWaiting = nextMessage(deniedViewer, m => m.type === "waiting-for-sender-approval");
   const deniedRequest = nextMessage(sender, m => m.type === "viewer-join-request");
@@ -295,4 +305,29 @@ test("viewer connections require the exact hosted viewer origin", async () => {
   assert.equal(await closed, 1008);
   send(sender, { type: "end-session" });
   sender.close(); viewer.close();
+});
+
+
+test("session capacity is four viewers by default", async () => {
+  const sender = await connect(wsUrl);
+  const createdPromise = nextMessage(sender, m => m.type === "session-created");
+  send(sender, { type: "create-session" });
+  const created = await createdPromise;
+  const viewers = [];
+  for (let i = 0; i < 4; i++) {
+    const viewer = await connect(wsUrl, "https://qunview-viewer.onrender.com");
+    const waiting = nextMessage(viewer, m => m.type === "waiting-for-sender-approval");
+    const request = nextMessage(sender, m => m.type === "viewer-join-request");
+    send(viewer, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
+    await Promise.all([waiting, request]);
+    viewers.push(viewer);
+  }
+  const fifth = await connect(wsUrl, "https://qunview-viewer.onrender.com");
+  const rejected = nextMessage(fifth, m => m.type === "error");
+  send(fifth, { type: "join-session", sessionId: created.sessionId, viewerToken: created.viewerToken });
+  assert.match((await rejected).message, /viewer capacity/);
+  send(sender, { type: "end-session" });
+  sender.close();
+  viewers.forEach(viewer => viewer.close());
+  fifth.close();
 });
