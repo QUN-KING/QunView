@@ -4,7 +4,7 @@ This is a one-time owner action. The permanent signing key must remain under the
 
 ## 1. Open a Codespaces terminal
 
-Open the QunView repository in GitHub Codespaces on the review branch `qunview-minimal-start-stop`, then open its terminal. The commands below create the key in your home directory, outside the Git repository, so it is not accidentally committed.
+Open the QunView repository in GitHub Codespaces on the `main` branch, then open its terminal. The reviewed implementation is already merged into `main`. The commands below create the key in your home directory, outside the Git repository, so it is not accidentally committed.
 
 ## 2. Generate the permanent key
 
