@@ -198,10 +198,22 @@ class WebRtcScreenStreamer(
         observedControlChannel.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) {}
             override fun onStateChange() {
-                if (viewers[viewerId] === connection &&
-                    (observedControlChannel.state() == DataChannel.State.CLOSED ||
-                     observedControlChannel.state() == DataChannel.State.CLOSING)) {
-                    revokeRemoteControlApproval(connection)
+                if (viewers[viewerId] !== connection) return
+                when (observedControlChannel.state()) {
+                    DataChannel.State.OPEN -> {
+                        // The owner's one-time Accessibility consent and this viewer's
+                        // Allow decision are sufficient; do not require another prompt.
+                        val accessibilityService = QunViewAccessibilityService.instance
+                        if (RemoteAssistancePolicy.canRequestControl(
+                                allowRemoteAssistance, connection.approved, accessibilityService != null)) {
+                            connection.approvedAccessibilityService = accessibilityService
+                            connection.remoteControlApproved = true
+                            sendControlReply(connection, "control-approved")
+                        }
+                    }
+                    DataChannel.State.CLOSED, DataChannel.State.CLOSING ->
+                        revokeRemoteControlApproval(connection)
+                    else -> {}
                 }
             }
             override fun onMessage(buffer: DataChannel.Buffer) {
