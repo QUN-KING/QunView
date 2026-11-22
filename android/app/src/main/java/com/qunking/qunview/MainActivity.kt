@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
     private var pendingStartAfterNotificationPermission = false
     private var allowRemoteAssistanceForSession = false
     private var mainButton: Button? = null
+    private var remoteAssistanceButton: Button? = null
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -87,6 +88,9 @@ class MainActivity : ComponentActivity() {
                 if (ScreenShareService.isActive) stopScreenSharing() else beginStartFlow()
             }
         }
+        remoteAssistanceButton = Button(this).apply {
+            setOnClickListener { toggleRemoteAssistance() }
+        }
         val status = TextView(this).apply {
             text = "Approve or deny each viewer from their notification. You can stop sharing at any time."
             textSize = 14f
@@ -97,6 +101,7 @@ class MainActivity : ComponentActivity() {
             setPadding(20, 20, 20, 20)
             addView(title)
             addView(mainButton)
+            addView(remoteAssistanceButton)
             addView(status)
         }
         // Android 15 enforces edge-to-edge for apps targeting API 35.
@@ -125,6 +130,47 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshMainButton() {
         mainButton?.text = if (ScreenShareService.isActive) "Stop sharing" else "Start sharing"
+        val preferences = getSharedPreferences("qunview_preferences", MODE_PRIVATE)
+        val enabled = preferences.getBoolean("remote_assistance_enabled", false)
+        val accessibilityReady = isAccessibilityServiceEnabled()
+        remoteAssistanceButton?.text = when {
+            !enabled -> "Remote Assistance: Off (tap to enable)"
+            !accessibilityReady -> "Remote Assistance: Setup required"
+            else -> "Remote Assistance: On (tap to turn off)"
+        }
+    }
+
+    private fun toggleRemoteAssistance() {
+        if (ScreenShareService.isActive) {
+            AlertDialog.Builder(this)
+                .setTitle("Sharing is active")
+                .setMessage("Stop sharing before changing Remote Assistance. The new setting will apply to the next session.")
+                .setPositiveButton("Stop sharing") { _, _ -> stopScreenSharing() }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+        val preferences = getSharedPreferences("qunview_preferences", MODE_PRIVATE)
+        val currentlyEnabled = preferences.getBoolean("remote_assistance_enabled", false)
+        if (currentlyEnabled) {
+            preferences.edit().putBoolean("remote_assistance_enabled", false).apply()
+            refreshMainButton()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Enable Remote Assistance?")
+            .setMessage("When you approve a viewer, they can use Back, Home, Tap and Swipe on your device. Only approve people you trust. You can turn this off here at any time.")
+            .setPositiveButton("Continue") { _, _ ->
+                preferences.edit().putBoolean("remote_assistance_disclosure_v1_accepted", true)
+                    .putBoolean("remote_assistance_enabled", true).apply()
+                if (isAccessibilityServiceEnabled()) {
+                    refreshMainButton()
+                } else {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun stopScreenSharing() {
