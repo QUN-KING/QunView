@@ -152,6 +152,21 @@ class MainActivity : ComponentActivity() {
         }
         val preferences = getSharedPreferences("qunview_preferences", MODE_PRIVATE)
         val currentlyEnabled = preferences.getBoolean("remote_assistance_enabled", false)
+        if (currentlyEnabled && !isAccessibilityServiceEnabled()) {
+            AlertDialog.Builder(this)
+                .setTitle("Remote Assistance setup")
+                .setMessage("Enable QunView remote assistance in Android Accessibility settings, or turn this feature off.")
+                .setPositiveButton("Open settings") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+                .setNegativeButton("Turn off") { _, _ ->
+                    preferences.edit().putBoolean("remote_assistance_enabled", false).apply()
+                    refreshMainButton()
+                }
+                .setNeutralButton("Cancel", null)
+                .show()
+            return
+        }
         if (currentlyEnabled) {
             preferences.edit().putBoolean("remote_assistance_enabled", false).apply()
             refreshMainButton()
