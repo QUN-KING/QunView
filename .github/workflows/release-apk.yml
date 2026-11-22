@@ -7,6 +7,7 @@ on:
       - "v*"
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -14,10 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       QUNVIEW_VERSION_CODE: ${{ github.run_number }}
-      QUNVIEW_KEYSTORE_BASE64: ${{ secrets.QUNVIEW_KEYSTORE_BASE64 }}
-      QUNVIEW_KEYSTORE_PASSWORD: ${{ secrets.QUNVIEW_KEYSTORE_PASSWORD }}
-      QUNVIEW_KEY_ALIAS: ${{ secrets.QUNVIEW_KEY_ALIAS }}
-      QUNVIEW_KEY_PASSWORD: ${{ secrets.QUNVIEW_KEY_PASSWORD }}
+      KEY_PASSWORD: ${{ secrets.QUNVIEW_KEYSTORE_PASSWORD }}
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -33,25 +31,28 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Verify signing secrets and prepare temporary keystore
+      - name: Retrieve latest successful encrypted permanent key artifact
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          missing=0
-          for name in QUNVIEW_KEYSTORE_BASE64 QUNVIEW_KEYSTORE_PASSWORD QUNVIEW_KEY_ALIAS QUNVIEW_KEY_PASSWORD; do
-            if [ -z "${!name}" ]; then
-              echo "::error::Missing GitHub Actions secret: $name"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "Add all four QunView release-signing secrets, then rerun this workflow."
-            exit 1
-          fi
-          mkdir -p "$RUNNER_TEMP/qunview-signing"
-          printf '%s' "$QUNVIEW_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/qunview-signing/release.jks"
-          test -s "$RUNNER_TEMP/qunview-signing/release.jks"
-          chmod 600 "$RUNNER_TEMP/qunview-signing/release.jks"
-          echo "QUNVIEW_KEYSTORE_PATH=$RUNNER_TEMP/qunview-signing/release.jks" >> "$GITHUB_ENV"
+          set -euo pipefail
+          test -n "$KEY_PASSWORD" || { echo "::error::Missing QUNVIEW_KEYSTORE_PASSWORD repository secret."; exit 1; }
+          run_id="$(gh run list --workflow create-release-key.yml --status success --limit 10 --json databaseId,createdAt --jq 'sort_by(.createdAt) | last | .databaseId')"
+          test -n "$run_id" && test "$run_id" != "null"
+          gh run download "$run_id" --name qunview-encrypted-release-key --dir "$RUNNER_TEMP/qunview-encrypted"
+          encrypted="$(find "$RUNNER_TEMP/qunview-encrypted" -type f -name '*.gpg' -print -quit)"
+          test -n "$encrypted"
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$KEY_PASSWORD" --decrypt --output "$RUNNER_TEMP/qunview-key.tar.gz" "$encrypted"
+          mkdir -p "$RUNNER_TEMP/qunview-key"
+          tar -xzf "$RUNNER_TEMP/qunview-key.tar.gz" -C "$RUNNER_TEMP/qunview-key"
+          test -s "$RUNNER_TEMP/qunview-key/qunview-release.jks"
+          test -s "$RUNNER_TEMP/qunview-key/QUNVIEW_KEYSTORE_BASE64.txt"
+          keytool -list -keystore "$RUNNER_TEMP/qunview-key/qunview-release.jks" -alias qunview-release -storepass "$KEY_PASSWORD"
+          echo "QUNVIEW_KEYSTORE_PATH=$RUNNER_TEMP/qunview-key/qunview-release.jks" >> "$GITHUB_ENV"
+          echo "QUNVIEW_KEY_ALIAS=qunview-release" >> "$GITHUB_ENV"
+          echo "QUNVIEW_KEYSTORE_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "QUNVIEW_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Build signed release APK
         run: gradle -p android assembleRelease --stacktrace
@@ -59,6 +60,7 @@ jobs:
       - name: Verify APK signature
         shell: bash
         run: |
+          set -euo pipefail
           apk="$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
           test -n "$apk"
           apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
@@ -75,4 +77,4 @@ jobs:
 
       - name: Remove temporary signing key
         if: always()
-        run: rm -rf "$RUNNER_TEMP/qunview-signing"
+        run: rm -rf "$RUNNER_TEMP/qunview-key" "$RUNNER_TEMP/qunview-encrypted" "$RUNNER_TEMP/qunview-key.tar.gz"
