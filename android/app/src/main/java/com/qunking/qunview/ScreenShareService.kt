@@ -47,15 +47,9 @@ class ScreenShareService : Service() {
                 return START_NOT_STICKY
             }
         }
-        createNotificationChannels()
-        isActive = true
-        sendBroadcast(Intent(ACTION_SHARING_STARTED).setPackage(packageName))
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, buildNotification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-            startForeground(NOTIFICATION_ID, buildNotification())
-        }
+        // Ignore duplicate start commands before changing session state or validating
+        // their extras; the active MediaProjection belongs to the first start command.
+        if (streamer != null) return START_NOT_STICKY
 
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val resultData = if (Build.VERSION.SDK_INT >= 33) {
@@ -70,8 +64,15 @@ class ScreenShareService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        // Ignore duplicate start commands while this capture session is alive.
-        if (streamer != null) return START_NOT_STICKY
+        createNotificationChannels()
+        isActive = true
+        sendBroadcast(Intent(ACTION_SHARING_STARTED).setPackage(packageName))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        }
 
         remoteAssistanceForSession = intent?.getBooleanExtra(EXTRA_ALLOW_REMOTE_ASSISTANCE, false) ?: false
         streamer = WebRtcScreenStreamer(
