@@ -9,11 +9,13 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 class ScreenShareService : Service() {
     private var streamer: WebRtcScreenStreamer? = null
+    private var remoteAssistanceForSession = false
 
     override fun onCreate() {
         super.onCreate()
@@ -45,15 +47,9 @@ class ScreenShareService : Service() {
                 return START_NOT_STICKY
             }
         }
-        createNotificationChannels()
-        isActive = true
-        sendBroadcast(Intent(ACTION_SHARING_STARTED).setPackage(packageName))
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, buildNotification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-            startForeground(NOTIFICATION_ID, buildNotification())
-        }
+        // Ignore duplicate start commands before changing session state or validating
+        // their extras; the active MediaProjection belongs to the first start command.
+        if (streamer != null) return START_NOT_STICKY
 
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val resultData = if (Build.VERSION.SDK_INT >= 33) {
@@ -68,13 +64,21 @@ class ScreenShareService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        // Ignore duplicate start commands while this capture session is alive.
-        if (streamer != null) return START_NOT_STICKY
+        createNotificationChannels()
+        isActive = true
+        sendBroadcast(Intent(ACTION_SHARING_STARTED).setPackage(packageName))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        }
 
+        remoteAssistanceForSession = intent?.getBooleanExtra(EXTRA_ALLOW_REMOTE_ASSISTANCE, false) ?: false
         streamer = WebRtcScreenStreamer(
             applicationContext,
             resultData,
-            intent?.getBooleanExtra(EXTRA_ALLOW_REMOTE_ASSISTANCE, false) ?: false,
+            remoteAssistanceForSession,
             onSessionReady = { viewerLink ->
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                     .putString(PENDING_VIEWER_LINK, viewerLink).apply()
@@ -120,6 +124,12 @@ class ScreenShareService : Service() {
         pendingViewerIds.toList().forEach { clearViewerRequest(it) }
     }
 
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val expected = packageName + "/" + QunViewAccessibilityService::class.java.name
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+    }
+
     private fun buildViewerRequestNotification(viewerId: String): Notification {
         val requestCode = viewerNotificationId(viewerId)
         val approveIntent = Intent(this, ScreenShareService::class.java)
@@ -135,8 +145,15 @@ class ScreenShareService : Service() {
                 @Suppress("DEPRECATION")
                 Notification.Builder(this)
             }
+        // Reflect the current Android setting, not only the session's initial choice.
+        val requestText = if (remoteAssistanceForSession && isAccessibilityServiceEnabled()) {
+            "Viewer ${viewerId.take(6)} requests screen viewing and may use Back, Home, Tap and Swipe. Allow only if you trust them."
+        } else {
+            "Viewer ${viewerId.take(6)} requests view-only access to your shared screen. Allow only if you trust them."
+        }
         return builder.setContentTitle("QunView: Viewer request")
-            .setContentText("Viewer ${viewerId.take(6)} is asking to view your screen. Approve only if you trust them.")
+            .setContentText(requestText)
+            .setStyle(Notification.BigTextStyle().bigText(requestText))
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_CALL)
