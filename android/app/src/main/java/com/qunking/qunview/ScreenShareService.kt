@@ -209,7 +209,6 @@ class ScreenShareService : Service() {
         const val ACTION_SHARING_STOPPED = "com.qunking.qunview.SHARING_STOPPED"
         const val ACTION_APPROVE_VIEWER = "com.qunking.qunview.APPROVE_VIEWER"
         const val ACTION_DENY_VIEWER = "com.qunking.qunview.DENY_VIEWER"
-        const val ACTION_VIEWER_REQUEST = "com.qunking.qunview.VIEWER_REQUEST"
         const val EXTRA_VIEWER_ID = "viewer_id"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
