@@ -1,0 +1,108 @@
+name: Create encrypted QunView release key
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create-key:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required owner secret and prevent accidental replacement
+        env:
+          KEY_PASSWORD: ${{ secrets.QUNVIEW_KEYSTORE_PASSWORD }}
+          EXISTING_KEY: ${{ secrets.QUNVIEW_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          if [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::First add the repository secret QUNVIEW_KEYSTORE_PASSWORD."
+            exit 1
+          fi
+          if [ -n "$EXISTING_KEY" ]; then
+            echo "::error::A permanent QunView key is already configured. Refusing to generate a replacement."
+            exit 1
+          fi
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Generate permanent signing key
+        env:
+          KEY_PASSWORD: ${{ secrets.QUNVIEW_KEYSTORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/qunview-key"
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/qunview-key/qunview-release.jks" \
+            -alias qunview-release \
+            -keyalg RSA -keysize 4096 -validity 10000 \
+            -storepass "$KEY_PASSWORD" -keypass "$KEY_PASSWORD" \
+            -dname "CN=QunView Release, OU=Android, O=QunView, L=India, ST=India, C=IN"
+          keytool -list -keystore "$RUNNER_TEMP/qunview-key/qunview-release.jks" \
+            -alias qunview-release -storepass "$KEY_PASSWORD"
+          base64 -w 0 "$RUNNER_TEMP/qunview-key/qunview-release.jks" \
+            > "$RUNNER_TEMP/qunview-key/QUNVIEW_KEYSTORE_BASE64.txt"
+          cat > "$RUNNER_TEMP/qunview-key/README.txt" <<'EOF'
+QunView permanent Android release key
+
+Alias: qunview-release
+Keystore password: the password you saved in GitHub secret QUNVIEW_KEYSTORE_PASSWORD
+Key password: same as keystore password
+
+Keep qunview-release.jks as a private offline backup.
+Use the complete contents of QUNVIEW_KEYSTORE_BASE64.txt as GitHub secret
+QUNVIEW_KEYSTORE_BASE64. Never commit or share either file.
+EOF
+
+      - name: Encrypt key backup with AES-256
+        env:
+          KEY_PASSWORD: ${{ secrets.QUNVIEW_KEYSTORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pyzipper
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import pyzipper
+
+          source = Path(os.environ["RUNNER_TEMP"]) / "qunview-key"
+          target = Path(os.environ["RUNNER_TEMP"]) / "qunview-release-key-AES256.zip"
+          password = os.environ["KEY_PASSWORD"].encode("utf-8")
+
+          with pyzipper.AESZipFile(
+              target, "w", compression=pyzipper.ZIP_DEFLATED,
+              encryption=pyzipper.WZ_AES
+          ) as archive:
+              archive.setpassword(password)
+              for name in (
+                  "qunview-release.jks",
+                  "QUNVIEW_KEYSTORE_BASE64.txt",
+                  "README.txt",
+              ):
+                  archive.write(source / name, arcname=name)
+
+          with pyzipper.AESZipFile(target) as archive:
+              archive.setpassword(password)
+              for name in archive.namelist():
+                  archive.read(name)
+          print("Encrypted AES-256 backup created and verified. No key or password printed.")
+          PY
+
+      - name: Upload only the encrypted key backup
+        uses: actions/upload-artifact@v7
+        with:
+          name: qunview-encrypted-release-key
+          path: ${{ runner.temp }}/qunview-release-key-AES256.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove plaintext key material from runner
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/qunview-key" "$RUNNER_TEMP/qunview-release-key-AES256.zip"
