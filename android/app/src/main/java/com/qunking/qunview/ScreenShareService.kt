@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
@@ -122,6 +123,12 @@ class ScreenShareService : Service() {
         pendingViewerIds.toList().forEach { clearViewerRequest(it) }
     }
 
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val expected = packageName + "/" + QunViewAccessibilityService::class.java.name
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+    }
+
     private fun buildViewerRequestNotification(viewerId: String): Notification {
         val requestCode = viewerNotificationId(viewerId)
         val approveIntent = Intent(this, ScreenShareService::class.java)
@@ -137,7 +144,8 @@ class ScreenShareService : Service() {
                 @Suppress("DEPRECATION")
                 Notification.Builder(this)
             }
-        val requestText = if (remoteAssistanceForSession) {
+        // Reflect the current Android setting, not only the session's initial choice.
+        val requestText = if (remoteAssistanceForSession && isAccessibilityServiceEnabled()) {
             "Viewer ${viewerId.take(6)} requests screen viewing and may use Back, Home, Tap and Swipe. Allow only if you trust them."
         } else {
             "Viewer ${viewerId.take(6)} requests view-only access to your shared screen. Allow only if you trust them."
