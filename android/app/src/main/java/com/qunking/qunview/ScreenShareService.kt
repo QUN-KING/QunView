@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 class ScreenShareService : Service() {
     private var streamer: WebRtcScreenStreamer? = null
+    private var remoteAssistanceForSession = false
 
     override fun onCreate() {
         super.onCreate()
@@ -71,10 +72,11 @@ class ScreenShareService : Service() {
         // Ignore duplicate start commands while this capture session is alive.
         if (streamer != null) return START_NOT_STICKY
 
+        remoteAssistanceForSession = intent?.getBooleanExtra(EXTRA_ALLOW_REMOTE_ASSISTANCE, false) ?: false
         streamer = WebRtcScreenStreamer(
             applicationContext,
             resultData,
-            intent?.getBooleanExtra(EXTRA_ALLOW_REMOTE_ASSISTANCE, false) ?: false,
+            remoteAssistanceForSession,
             onSessionReady = { viewerLink ->
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                     .putString(PENDING_VIEWER_LINK, viewerLink).apply()
@@ -135,8 +137,14 @@ class ScreenShareService : Service() {
                 @Suppress("DEPRECATION")
                 Notification.Builder(this)
             }
+        val requestText = if (remoteAssistanceForSession) {
+            "Viewer ${viewerId.take(6)} requests screen viewing and may use Back, Home, Tap and Swipe. Allow only if you trust them."
+        } else {
+            "Viewer ${viewerId.take(6)} requests view-only access to your shared screen. Allow only if you trust them."
+        }
         return builder.setContentTitle("QunView: Viewer request")
-            .setContentText("Viewer ${viewerId.take(6)} is asking to view your screen. Approve only if you trust them.")
+            .setContentText(requestText)
+            .setStyle(Notification.BigTextStyle().bigText(requestText))
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_CALL)
