@@ -206,7 +206,7 @@ wss.on("connection", (socket, request) => {
       socket.sessionId = id;
       socket.role = "sender";
       touchSession(id, session);
-      return send(socket, { type: "session-created", sessionId: id, resumeToken, viewerToken, expiresInSeconds: SESSION_TTL_MS / 1000 });
+      return send(socket, { type: "session-created", sessionId: id, resumeToken, viewerToken, idleExpiresInSeconds: SESSION_TTL_MS / 1000 });
     }
 
     if (msg.type === "resume-session") {
