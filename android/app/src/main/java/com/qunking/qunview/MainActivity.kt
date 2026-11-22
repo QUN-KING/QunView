@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val title = TextView(this).apply {
-            text = "QunView\n\nThe main button starts or stops sharing. Android asks for screen-capture approval each time. Enable Remote Assistance once in Android Accessibility settings; after that, approving a viewer also allows that viewer to use Back, Home, Tap and Swipe."
+            text = "QunView\n\nThe main button starts or stops sharing. Android asks for screen-capture approval each time. If Remote Assistance is enabled, an approved viewer can use Back, Home, Tap and Swipe. Each viewer request explains this before you choose Allow or Deny."
             textSize = 18f
             setPadding(24, 24, 24, 24)
         }
@@ -174,30 +174,42 @@ class MainActivity : ComponentActivity() {
             return
         }
         val preferences = getSharedPreferences("qunview_preferences", MODE_PRIVATE)
-        if (preferences.getBoolean("remote_assistance_choice_saved", false)) {
-            // Remember the owner's first choice; do not repeat the same disclosure every start.
-            // Detect if the owner enabled Accessibility later in Android Settings.
-            allowRemoteAssistanceForSession = isAccessibilityServiceEnabled()
-            if (allowRemoteAssistanceForSession) {
-                preferences.edit().putBoolean("remote_assistance_enabled", true).apply()
-            }
-            requestScreenPermission()
+        // Require a one-time disclosure even for older installs with a previously saved choice.
+        if (!preferences.getBoolean("remote_assistance_disclosure_v1_accepted", false)) {
+            showRemoteAssistanceDisclosure()
             return
         }
-        if (isAccessibilityServiceEnabled()) {
-            // The Android Accessibility permission is the one-time Remote Assistance consent.
-            // Do not show a second in-app consent dialog.
-            allowRemoteAssistanceForSession = true
-            preferences.edit().putBoolean("remote_assistance_choice_saved", true)
-                .putBoolean("remote_assistance_enabled", true).apply()
-            requestScreenPermission()
-        } else {
-            // Open Android's own permission screen only on the first setup attempt.
-            // If the owner skips it, screen sharing still works; later enabling it in
-            // Android Settings is detected automatically on the next start.
-            startAfterAccessibilitySettings = true
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
+        allowRemoteAssistanceForSession = preferences.getBoolean("remote_assistance_enabled", false) && isAccessibilityServiceEnabled()
+        requestScreenPermission()
+    }
+
+    private fun showRemoteAssistanceDisclosure() {
+        AlertDialog.Builder(this)
+            .setTitle("Remote Assistance — your control")
+            .setMessage("If you enable Remote Assistance and allow a viewer request, that viewer can see your shared screen and use Back, Home, Tap and Swipe on your device. Only allow people you trust. You can deny each viewer request or stop sharing at any time. Android Accessibility access is required for these controls. QunView does not read screen text or save screen recordings. You can choose screen sharing without remote controls.")
+            .setPositiveButton("Enable Remote Assistance") { _, _ ->
+                getSharedPreferences("qunview_preferences", MODE_PRIVATE).edit()
+                    .putBoolean("remote_assistance_disclosure_v1_accepted", true)
+                    .putBoolean("remote_assistance_enabled", true)
+                    .putBoolean("remote_assistance_choice_saved", true).apply()
+                if (isAccessibilityServiceEnabled()) {
+                    allowRemoteAssistanceForSession = true
+                    requestScreenPermission()
+                } else {
+                    startAfterAccessibilitySettings = true
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+            }
+            .setNegativeButton("Screen sharing only") { _, _ ->
+                getSharedPreferences("qunview_preferences", MODE_PRIVATE).edit()
+                    .putBoolean("remote_assistance_disclosure_v1_accepted", true)
+                    .putBoolean("remote_assistance_enabled", false)
+                    .putBoolean("remote_assistance_choice_saved", true).apply()
+                allowRemoteAssistanceForSession = false
+                requestScreenPermission()
+            }
+            .setCancelable(false)
+            .show()
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
@@ -211,19 +223,10 @@ class MainActivity : ComponentActivity() {
         refreshMainButton()
         if (startAfterAccessibilitySettings) {
             startAfterAccessibilitySettings = false
-            if (isAccessibilityServiceEnabled()) {
-                allowRemoteAssistanceForSession = true
-                getSharedPreferences("qunview_preferences", MODE_PRIVATE).edit()
-                    .putBoolean("remote_assistance_choice_saved", true)
-                    .putBoolean("remote_assistance_enabled", true).apply()
-                requestScreenPermission()
-            } else {
-                allowRemoteAssistanceForSession = false
-                getSharedPreferences("qunview_preferences", MODE_PRIVATE).edit()
-                    .putBoolean("remote_assistance_choice_saved", true)
-                    .putBoolean("remote_assistance_enabled", false).apply()
-                requestScreenPermission()
-            }
+            val preferences = getSharedPreferences("qunview_preferences", MODE_PRIVATE)
+            allowRemoteAssistanceForSession =
+                preferences.getBoolean("remote_assistance_enabled", false) && isAccessibilityServiceEnabled()
+            requestScreenPermission()
         }
     }
 
