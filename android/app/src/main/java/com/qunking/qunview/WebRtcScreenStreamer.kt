@@ -24,19 +24,19 @@ import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
 
-/** Sender-side WebRTC pipeline. Screen frames are never recorded or saved; networking is free STUN-only. */
+/** Sender-side WebRTC pipeline with one independent peer connection per approved viewer. */
 class WebRtcScreenStreamer(
     private val context: Context,
     private val projectionPermission: Intent,
+    private val allowRemoteAssistance: Boolean,
     private val onSessionReady: (String) -> Unit,
     private val onError: (String) -> Unit,
-    private val onViewerRequest: () -> Unit,
-    private val onRemoteControlRequest: () -> Unit,
-    private val onViewerLeft: () -> Unit,
-    private val onRemoteControlRevoked: () -> Unit,
+    private val onViewerRequest: (String) -> Unit,
+    private val onViewerLeft: (String) -> Unit,
     private val onStopped: () -> Unit
 ) {
     companion object {
@@ -45,16 +45,21 @@ class WebRtcScreenStreamer(
         private const val VIEWER_BASE_URL = "https://qunview-viewer.onrender.com"
     }
 
+    private data class ViewerConnection(
+        val peer: PeerConnection,
+        var controlChannel: DataChannel? = null,
+        val pendingRemoteIce: MutableList<IceCandidate> = mutableListOf(),
+        @Volatile var approved: Boolean = true,
+        @Volatile var remoteControlApproved: Boolean = false,
+        @Volatile var remoteControlRequestPending: Boolean = false,
+        @Volatile var approvedAccessibilityService: QunViewAccessibilityService? = null,
+        @Volatile var recoveryPending: Boolean = false
+    )
+
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
     @Volatile private var stopped = false
-    @Volatile private var viewerApproved = false
-    @Volatile private var remoteControlApproved = false
-    @Volatile private var remoteControlRequestPending = false
-    @Volatile private var approvedAccessibilityService: QunViewAccessibilityService? = null
     private var socket: WebSocket? = null
     private var factory: PeerConnectionFactory? = null
-    private var peer: PeerConnection? = null
-    private var controlChannel: DataChannel? = null
     private var capturer: ScreenCapturerAndroid? = null
     private var videoSource: VideoSource? = null
     private var videoTrack: VideoTrack? = null
@@ -65,9 +70,9 @@ class WebRtcScreenStreamer(
     private var viewerToken: String? = null
     private var retryDelay = 2L
     private var retryPending = false
-    @Volatile private var peerRecoveryPending = false
     private val retryExecutor = Executors.newSingleThreadScheduledExecutor()
-    private val pendingRemoteIce = mutableListOf<IceCandidate>()
+    private val viewers = ConcurrentHashMap<String, ViewerConnection>()
+    private val pendingViewerIds = ConcurrentHashMap.newKeySet<String>()
 
     fun start() {
         if (stopped) return
@@ -104,8 +109,7 @@ class WebRtcScreenStreamer(
     @Synchronized private fun scheduleReconnect() {
         if (stopped || retryPending) return
         retryPending = true
-        stopPeerOnly()
-        pendingRemoteIce.clear()
+        closeAllPeers()
         retryExecutor.schedule({
             synchronized(this@WebRtcScreenStreamer) {
                 retryPending = false
@@ -115,21 +119,20 @@ class WebRtcScreenStreamer(
         retryDelay = (retryDelay * 2).coerceAtMost(30L)
     }
 
-    private fun schedulePeerRecovery(state: PeerConnection.IceConnectionState) {
-        if (stopped || !viewerApproved || peerRecoveryPending) return
-        peerRecoveryPending = true
+    private fun schedulePeerRecovery(viewerId: String, state: PeerConnection.IceConnectionState) {
+        val connection = viewers[viewerId] ?: return
+        if (stopped || connection.recoveryPending) return
+        connection.recoveryPending = true
         retryExecutor.schedule({
             synchronized(this@WebRtcScreenStreamer) {
-                peerRecoveryPending = false
-                if (stopped || !viewerApproved) return@synchronized
-                val current = peer ?: return@synchronized
-                val currentState = current.iceConnectionState()
+                connection.recoveryPending = false
+                if (stopped || viewers[viewerId] !== connection) return@synchronized
+                val currentState = connection.peer.iceConnectionState()
                 if (currentState != PeerConnection.IceConnectionState.DISCONNECTED &&
                     currentState != PeerConnection.IceConnectionState.FAILED) return@synchronized
-                Log.w(TAG, "WebRTC ICE $state persisted; rebuilding peer connection")
-                stopPeerOnly()
-                pendingRemoteIce.clear()
-                createOffer()
+                Log.w(TAG, "Viewer $viewerId WebRTC ICE $state persisted; rebuilding peer")
+                closeViewer(viewerId)
+                createOffer(viewerId)
             }
         }, if (state == PeerConnection.IceConnectionState.DISCONNECTED) 5L else 0L, TimeUnit.SECONDS)
     }
@@ -156,26 +159,25 @@ class WebRtcScreenStreamer(
     private fun fetchIceServers(): List<PeerConnection.IceServer> =
         listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
 
-    private fun createPeer() {
-        if (stopped || peer != null) return
-        val ice = fetchIceServers()
-        peer = factory!!.createPeerConnection(PeerConnection.RTCConfiguration(ice).apply {
+    private fun createPeer(viewerId: String): ViewerConnection? {
+        if (stopped) return null
+        viewers[viewerId]?.let { return it }
+        lateinit var connection: ViewerConnection
+        val peer = factory!!.createPeerConnection(PeerConnection.RTCConfiguration(fetchIceServers()).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }, object : PeerConnection.Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState) {}
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
                 when (state) {
-                    PeerConnection.IceConnectionState.CONNECTED,
-                    PeerConnection.IceConnectionState.COMPLETED -> peerRecoveryPending = false
                     PeerConnection.IceConnectionState.DISCONNECTED,
-                    PeerConnection.IceConnectionState.FAILED -> schedulePeerRecovery(state)
+                    PeerConnection.IceConnectionState.FAILED -> schedulePeerRecovery(viewerId, state)
                     else -> {}
                 }
             }
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
             override fun onIceCandidate(candidate: IceCandidate) {
-                sendSignal(JSONObject().put("type", "ice-candidate").put("data", JSONObject()
+                sendSignal(JSONObject().put("type", "ice-candidate").put("viewerId", viewerId).put("data", JSONObject()
                     .put("sdpMid", candidate.sdpMid).put("sdpMLineIndex", candidate.sdpMLineIndex).put("candidate", candidate.sdp)))
             }
             override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) {}
@@ -184,21 +186,38 @@ class WebRtcScreenStreamer(
             override fun onDataChannel(channel: DataChannel) {}
             override fun onRenegotiationNeeded() {}
             override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<out org.webrtc.MediaStream>) {}
-        })
-        peer?.addTrack(videoTrack, listOf("QunViewScreenStream"))
-        val observedControlChannel = peer?.createDataChannel("qunview-control", DataChannel.Init())
-        controlChannel = observedControlChannel
-        observedControlChannel?.registerObserver(object : DataChannel.Observer {
+        }) ?: run {
+            onError("Could not create a connection for one viewer.")
+            return null
+        }
+        connection = ViewerConnection(peer)
+        viewers[viewerId] = connection
+        peer.addTrack(videoTrack, listOf("QunViewScreenStream"))
+        val observedControlChannel = peer.createDataChannel("qunview-control", DataChannel.Init())
+        connection.controlChannel = observedControlChannel
+        observedControlChannel.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) {}
             override fun onStateChange() {
-                if (observedControlChannel != null && controlChannel === observedControlChannel &&
-                    (observedControlChannel.state() == DataChannel.State.CLOSED ||
-                     observedControlChannel.state() == DataChannel.State.CLOSING)) {
-                    revokeRemoteControlApproval()
+                if (viewers[viewerId] !== connection) return
+                when (observedControlChannel.state()) {
+                    DataChannel.State.OPEN -> {
+                        // The owner's one-time Accessibility consent and this viewer's
+                        // Allow decision are sufficient; do not require another prompt.
+                        val accessibilityService = QunViewAccessibilityService.instance
+                        if (RemoteAssistancePolicy.canRequestControl(
+                                allowRemoteAssistance, connection.approved, accessibilityService != null)) {
+                            connection.approvedAccessibilityService = accessibilityService
+                            connection.remoteControlApproved = true
+                            sendControlReply(connection, "control-approved")
+                        }
+                    }
+                    DataChannel.State.CLOSED, DataChannel.State.CLOSING ->
+                        revokeRemoteControlApproval(connection)
+                    else -> {}
                 }
             }
             override fun onMessage(buffer: DataChannel.Buffer) {
-                if (!buffer.binary && buffer.data.remaining() <= 1024) {
+                if (!buffer.binary && buffer.data.remaining() <= 1024 && viewers[viewerId] === connection) {
                     try {
                         val bytes = ByteArray(buffer.data.remaining())
                         buffer.data.get(bytes)
@@ -206,111 +225,106 @@ class WebRtcScreenStreamer(
                         when (command.optString("action")) {
                             "request-control" -> {
                                 val accessibilityService = QunViewAccessibilityService.instance
-                                if (viewerApproved && accessibilityService != null) {
-                                    if (remoteControlApproved && approvedAccessibilityService === accessibilityService) {
-                                        sendControlReply("control-approved")
-                                    } else {
-                                        revokeRemoteControlApproval()
-                                        if (!remoteControlRequestPending) {
-                                            remoteControlRequestPending = true
-                                            onRemoteControlRequest()
-                                        }
-                                    }
+                                if (RemoteAssistancePolicy.canRequestControl(allowRemoteAssistance, connection.approved, accessibilityService != null)) {
+                                    connection.remoteControlRequestPending = false
+                                    connection.approvedAccessibilityService = accessibilityService
+                                    connection.remoteControlApproved = true
+                                    sendControlReply(connection, "control-approved")
                                 } else {
-                                    revokeRemoteControlApproval()
-                                    sendControlReply("control-denied")
+                                    revokeRemoteControlApproval(connection)
+                                    sendControlReply(connection, "control-denied")
                                 }
                             }
-                            "release-control" -> revokeRemoteControlApproval()
+                            "release-control" -> revokeRemoteControlApproval(connection)
                             "back", "home", "tap", "swipe" -> {
                                 val accessibilityService = QunViewAccessibilityService.instance
-                                if (viewerApproved && remoteControlApproved &&
-                                    accessibilityService != null &&
-                                    approvedAccessibilityService === accessibilityService) {
+                                if (RemoteAssistancePolicy.canExecuteControl(allowRemoteAssistance, connection.approved,
+                                        connection.remoteControlApproved, accessibilityService != null) &&
+                                    accessibilityService != null && connection.approvedAccessibilityService === accessibilityService) {
                                     accessibilityService.performRemoteCommand(command)
-                                } else if (remoteControlApproved) {
-                                    revokeRemoteControlApproval()
+                                } else if (connection.remoteControlApproved) {
+                                    revokeRemoteControlApproval(connection)
                                 }
                             }
                         }
-                    } catch (error: Exception) { Log.w(TAG, "Rejected control message", error) }
+                    } catch (error: Exception) { Log.w(TAG, "Rejected control message from $viewerId", error) }
                 }
             }
         })
+        return connection
     }
 
-    @Synchronized fun approveViewer() {
-        if (stopped || viewerApproved) return
-        viewerApproved = true
-        sendSignal(JSONObject().put("type", "approve-viewer"))
+    @Synchronized fun approveViewer(viewerId: String) {
+        if (stopped || viewerId !in pendingViewerIds) return
+        pendingViewerIds.remove(viewerId)
+        sendSignal(JSONObject().put("type", "approve-viewer").put("viewerId", viewerId))
     }
 
-    @Synchronized fun approveRemoteControl(): Boolean {
-        val accessibilityService = QunViewAccessibilityService.instance
-        if (stopped || !viewerApproved || accessibilityService == null) {
-            revokeRemoteControlApproval()
-            sendControlReply("control-denied")
-            return false
-        }
-        remoteControlRequestPending = false
-        approvedAccessibilityService = accessibilityService
-        remoteControlApproved = true
-        sendControlReply("control-approved")
-        return true
+    @Synchronized fun denyViewer(viewerId: String) {
+        if (stopped || viewerId !in pendingViewerIds) return
+        pendingViewerIds.remove(viewerId)
+        sendSignal(JSONObject().put("type", "deny-viewer").put("viewerId", viewerId))
+    }
+
+    private fun revokeRemoteControlApproval(connection: ViewerConnection) {
+        val hadRemoteControlState = connection.remoteControlApproved || connection.remoteControlRequestPending
+        connection.remoteControlApproved = false
+        connection.remoteControlRequestPending = false
+        connection.approvedAccessibilityService = null
     }
 
     @Synchronized fun denyRemoteControl() {
-        revokeRemoteControlApproval()
-        sendControlReply("control-denied")
+        viewers.values.forEach { connection ->
+            revokeRemoteControlApproval(connection)
+            sendControlReply(connection, "control-denied")
+        }
     }
 
-    private fun revokeRemoteControlApproval() {
-        val hadRemoteControlState = remoteControlApproved || remoteControlRequestPending
-        remoteControlApproved = false
-        remoteControlRequestPending = false
-        approvedAccessibilityService = null
-        if (hadRemoteControlState) onRemoteControlRevoked()
-    }
-
-    private fun revokeRemoteControlAndNotify() {
-        revokeRemoteControlApproval()
-        sendControlReply("control-denied")
-    }
-
-    private fun sendControlReply(action: String) {
+    private fun sendControlReply(connection: ViewerConnection, action: String) {
         val bytes = ByteBuffer.wrap(JSONObject().put("action", action).toString().toByteArray(Charsets.UTF_8))
-        controlChannel?.send(DataChannel.Buffer(bytes, false))
+        connection.controlChannel?.send(DataChannel.Buffer(bytes, false))
     }
 
-    @Synchronized fun denyViewer() {
-        if (stopped || viewerApproved) return
-        sendSignal(JSONObject().put("type", "deny-viewer"))
-    }
-
-    private fun createOffer() {
-        if (!viewerApproved) return
-        createPeer()
-        peer?.createOffer(object : SdpObserver {
+    private fun createOffer(viewerId: String) {
+        val connection = createPeer(viewerId) ?: return
+        if (!connection.approved) return
+        connection.peer.createOffer(object : SdpObserver {
             override fun onCreateSuccess(description: SessionDescription) {
-                peer?.setLocalDescription(object : SdpObserver {
+                if (viewers[viewerId] !== connection) return
+                connection.peer.setLocalDescription(object : SdpObserver {
                     override fun onSetSuccess() {
-                        sendSignal(JSONObject().put("type", "offer").put("data", JSONObject()
+                        sendSignal(JSONObject().put("type", "offer").put("viewerId", viewerId).put("data", JSONObject()
                             .put("type", description.type.canonicalForm()).put("sdp", description.description)))
                     }
-                    override fun onSetFailure(error: String) { onError("Could not set local video description.") }
+                    override fun onSetFailure(error: String) { onError("Could not set local video description for a viewer.") }
                     override fun onCreateSuccess(description: SessionDescription) {}
                     override fun onCreateFailure(error: String) {}
                 }, description)
             }
             override fun onSetSuccess() {}
-            override fun onCreateFailure(error: String) { onError("Could not create video connection.") }
+            override fun onCreateFailure(error: String) { onError("Could not create a viewer video connection.") }
             override fun onSetFailure(error: String) {}
         }, MediaConstraints())
+    }
+
+    private fun closeViewer(viewerId: String) {
+        val connection = viewers.remove(viewerId) ?: return
+        revokeRemoteControlApproval(connection)
+        connection.controlChannel?.unregisterObserver()
+        connection.controlChannel?.close()
+        connection.controlChannel?.dispose()
+        connection.peer.close()
+        connection.peer.dispose()
+    }
+
+    private fun closeAllPeers() {
+        viewers.keys.toList().forEach { closeViewer(it) }
     }
 
     private fun handleSignal(raw: String) {
         try {
             val message = JSONObject(raw)
+            val viewerId = message.optString("viewerId")
             when (message.optString("type")) {
                 "session-created" -> {
                     sessionId = message.getString("sessionId")
@@ -323,57 +337,65 @@ class WebRtcScreenStreamer(
                 "session-resumed" -> {
                     retryDelay = 2L
                     retryPending = false
-                    viewerApproved = message.optBoolean("viewerApproved", false)
-                    // Remote-control permission is always requested again after reconnect.
-                    revokeRemoteControlAndNotify()
-                    pendingRemoteIce.clear()
-                    if (viewerApproved) createOffer()
                 }
                 "viewer-join-request" -> {
-                    viewerApproved = false
-                    revokeRemoteControlApproval()
-                    stopPeerOnly()
-                    pendingRemoteIce.clear()
-                    onViewerRequest()
+                    if (viewerId.isNotBlank() && pendingViewerIds.add(viewerId)) onViewerRequest(viewerId)
                 }
                 "viewer-approved" -> {
-                    viewerApproved = true
-                    createOffer()
+                    pendingViewerIds.remove(viewerId)
+                    val connection = viewers[viewerId]
+                    if (connection != null) connection.approved = true
+                    createOffer(viewerId)
                 }
                 "viewer-denied-by-sender" -> {
-                    viewerApproved = false
-                    revokeRemoteControlApproval()
-                    stopPeerOnly()
-                    pendingRemoteIce.clear()
-                    // Clear the sender-side pending prompt so the next viewer can request access.
-                    onViewerLeft()
+                    pendingViewerIds.remove(viewerId)
+                    closeViewer(viewerId)
+                    onViewerLeft(viewerId)
                 }
                 "viewer-left" -> {
-                    viewerApproved = false
-                    revokeRemoteControlApproval()
-                    stopPeerOnly()
-                    pendingRemoteIce.clear()
-                    onViewerLeft()
+                    pendingViewerIds.remove(viewerId)
+                    closeViewer(viewerId)
+                    onViewerLeft(viewerId)
+                }
+                "sender-reconnected" -> {
+                    val connection = viewers[viewerId]
+                    if (connection != null) {
+                        connection.approved = true
+                        createOffer(viewerId)
+                    } else createOffer(viewerId)
                 }
                 "answer" -> {
+                    val connection = viewers[viewerId] ?: return
                     val data = message.getJSONObject("data")
                     val description = SessionDescription(SessionDescription.Type.fromCanonicalForm(data.getString("type")), data.getString("sdp"))
-                    peer?.setRemoteDescription(object : SdpObserver {
-                        override fun onSetSuccess() { pendingRemoteIce.forEach { peer?.addIceCandidate(it) }; pendingRemoteIce.clear() }
-                        override fun onSetFailure(error: String) { onError("Viewer answer was rejected.") }
+                    connection.peer.setRemoteDescription(object : SdpObserver {
+                        override fun onSetSuccess() {
+                            synchronized(connection.pendingRemoteIce) {
+                                connection.pendingRemoteIce.forEach { connection.peer.addIceCandidate(it) }
+                                connection.pendingRemoteIce.clear()
+                            }
+                        }
+                        override fun onSetFailure(error: String) { onError("A viewer answer was rejected.") }
                         override fun onCreateSuccess(description: SessionDescription) {}
                         override fun onCreateFailure(error: String) {}
                     }, description)
                 }
                 "ice-candidate" -> {
+                    val connection = viewers[viewerId] ?: return
                     val data = message.getJSONObject("data")
                     val candidate = IceCandidate(data.optString("sdpMid"), data.optInt("sdpMLineIndex"), data.getString("candidate"))
-                    if (peer?.remoteDescription == null) pendingRemoteIce.add(candidate) else peer?.addIceCandidate(candidate)
+                    if (connection.peer.remoteDescription == null) {
+                        synchronized(connection.pendingRemoteIce) { connection.pendingRemoteIce.add(candidate) }
+                    } else connection.peer.addIceCandidate(candidate)
                 }
                 "error" -> {
                     val msg = message.optString("message", "Signaling error.")
                     if (msg == "Session cannot be resumed" && socket != null) {
-                        sessionId = null; resumeToken = null; viewerToken = null; stopPeerOnly(); pendingRemoteIce.clear()
+                        sessionId = null
+                        resumeToken = null
+                        viewerToken = null
+                        closeAllPeers()
+                        pendingViewerIds.clear()
                         socket?.send(JSONObject().put("type", "create-session").toString())
                     } else onError(msg)
                 }
@@ -389,14 +411,12 @@ class WebRtcScreenStreamer(
     @Synchronized fun stop() {
         if (stopped) return
         stopped = true
-        peerRecoveryPending = false
-        viewerApproved = false
-        revokeRemoteControlApproval()
         socket?.send(JSONObject().put("type", "end-session").toString())
         socket?.close(1000, "Sender stopped")
         socket = null
         retryExecutor.shutdownNow()
-        stopPeerOnly()
+        closeAllPeers()
+        pendingViewerIds.clear()
         try { capturer?.stopCapture() } catch (error: Exception) { Log.w(TAG, "Capture already stopped", error) }
         capturer?.dispose(); capturer = null
         videoTrack?.dispose(); videoTrack = null
@@ -404,19 +424,7 @@ class WebRtcScreenStreamer(
         textureHelper?.dispose(); textureHelper = null
         factory?.dispose(); factory = null
         egl?.release(); egl = null
-        pendingRemoteIce.clear()
         client.dispatcher.executorService.shutdown()
         onStopped()
-    }
-
-    private fun stopPeerOnly() {
-        revokeRemoteControlApproval()
-        controlChannel?.unregisterObserver()
-        controlChannel?.close()
-        controlChannel?.dispose()
-        controlChannel = null
-        peer?.close()
-        peer?.dispose()
-        peer = null
     }
 }

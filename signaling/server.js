@@ -7,7 +7,7 @@ const { WebSocketServer, WebSocket } = require("ws");
 
 const PORT = Number(process.env.PORT || 8080);
 const sessions = new Map();
-const MAX_CLIENTS_PER_SESSION = 2;
+const MAX_VIEWERS_PER_SESSION = Math.max(1, Math.min(8, Number.parseInt(process.env.MAX_VIEWERS_PER_SESSION || "4", 10) || 4));
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const VIEWER_ORIGIN = "https://qunview-viewer.onrender.com";
 
@@ -137,13 +137,16 @@ function cleanSession(id) {
   clearTimeout(session.timer);
   for (const client of session.clients) {
     client.sessionId = undefined;
-    if (client.readyState === WebSocket.OPEN) client.close(1000, "Session ended");
+    if (client.readyState === WebSocket.OPEN) {
+      if (client.role === "viewer") send(client, { type: "session-ended", viewerId: client.viewerId });
+      client.close(1000, "Session ended");
+    }
   }
 }
-function requestViewerApproval(session) {
-  session.approved = false;
-  send(session.viewer, { type: "waiting-for-sender-approval" });
-  send(session.sender, { type: "viewer-join-request" });
+function requestViewerApproval(session, viewerId, viewer) {
+  viewer.approved = false;
+  send(viewer.socket, { type: "waiting-for-sender-approval", viewerId });
+  send(session.sender, { type: "viewer-join-request", viewerId });
 }
 
 wss.on("connection", (socket, request) => {
@@ -198,12 +201,12 @@ wss.on("connection", (socket, request) => {
       const id = randomBytes(16).toString("hex");
       const resumeToken = randomBytes(32).toString("hex");
       const viewerToken = randomBytes(32).toString("hex");
-      const session = { clients: new Set([socket]), createdAt: Date.now(), lastActivityAt: Date.now(), sender: socket, viewer: null, approved: false, resumeToken, viewerToken };
+      const session = { clients: new Set([socket]), viewers: new Map(), createdAt: Date.now(), lastActivityAt: Date.now(), sender: socket, resumeToken, viewerToken };
       sessions.set(id, session);
       socket.sessionId = id;
       socket.role = "sender";
       touchSession(id, session);
-      return send(socket, { type: "session-created", sessionId: id, resumeToken, viewerToken, expiresInSeconds: SESSION_TTL_MS / 1000 });
+      return send(socket, { type: "session-created", sessionId: id, resumeToken, viewerToken, idleExpiresInSeconds: SESSION_TTL_MS / 1000 });
     }
 
     if (msg.type === "resume-session") {
@@ -217,16 +220,21 @@ wss.on("connection", (socket, request) => {
         return send(socket, { type: "error", message: "Sender is already connected" });
       }
       session.sender = socket;
-      const viewerStillConnected = Boolean(session.viewer && session.viewer.readyState === WebSocket.OPEN);
-      if (!viewerStillConnected) session.approved = false;
+      const connectedViewers = [...session.viewers.entries()].filter(([, viewer]) => viewer.socket.readyState === WebSocket.OPEN);
+      for (const [viewerId, viewer] of session.viewers) {
+        if (viewer.socket.readyState !== WebSocket.OPEN) {
+          session.viewers.delete(viewerId);
+          session.clients.delete(viewer.socket);
+        }
+      }
       touchSession(id, session);
       session.clients.add(socket);
       socket.sessionId = id;
       socket.role = "sender";
-      send(socket, { type: "session-resumed", sessionId: id, viewerApproved: Boolean(session.approved && viewerStillConnected) });
-      if (viewerStillConnected) {
-        if (session.approved) send(session.viewer, { type: "sender-reconnected" });
-        else requestViewerApproval(session);
+      send(socket, { type: "session-resumed", sessionId: id, viewerCount: connectedViewers.length });
+      for (const [viewerId, viewer] of connectedViewers) {
+        if (viewer.approved) send(viewer.socket, { type: "sender-reconnected", viewerId });
+        else requestViewerApproval(session, viewerId, viewer);
       }
       return;
     }
@@ -242,19 +250,23 @@ wss.on("connection", (socket, request) => {
       if (!session.sender || session.sender.readyState !== WebSocket.OPEN) {
         return send(socket, { type: "error", message: "Sender is not connected yet" });
       }
-      if (session.viewer && session.viewer.readyState === WebSocket.OPEN) {
-        return send(socket, { type: "error", message: "Session already has a viewer" });
+      for (const [viewerId, viewer] of session.viewers) {
+        if (viewer.socket.readyState !== WebSocket.OPEN) {
+          session.viewers.delete(viewerId);
+          session.clients.delete(viewer.socket);
+        }
       }
-      // A session is strictly one sender plus at most one viewer.
-      if (session.clients.size >= MAX_CLIENTS_PER_SESSION) {
-        return send(socket, { type: "error", message: "Session is full" });
+      if (session.viewers.size >= MAX_VIEWERS_PER_SESSION) {
+        return send(socket, { type: "error", message: "Session has reached its current viewer capacity" });
       }
-      session.viewer = socket;
-      session.approved = false;
+      const viewerId = randomBytes(8).toString("hex");
+      const viewer = { socket, approved: false };
+      session.viewers.set(viewerId, viewer);
       session.clients.add(socket);
       socket.sessionId = id;
       socket.role = "viewer";
-      requestViewerApproval(session);
+      socket.viewerId = viewerId;
+      requestViewerApproval(session, viewerId, viewer);
       return;
     }
 
@@ -265,19 +277,22 @@ wss.on("connection", (socket, request) => {
 
     if (msg.type === "approve-viewer" || msg.type === "deny-viewer") {
       if (socket.role !== "sender") return send(socket, { type: "error", message: "Only the sender can decide viewer access" });
-      if (!session.viewer || session.viewer.readyState !== WebSocket.OPEN) return send(socket, { type: "error", message: "No viewer is waiting" });
+      const viewerId = typeof msg.viewerId === "string" ? msg.viewerId : "";
+      const viewer = session.viewers.get(viewerId);
+      if (!viewer || viewer.socket.readyState !== WebSocket.OPEN) {
+        return send(socket, { type: "error", message: "That viewer is no longer waiting" });
+      }
       if (msg.type === "approve-viewer") {
-        session.approved = true;
-        send(session.viewer, { type: "sender-approved-viewer" });
-        send(socket, { type: "viewer-approved" });
+        viewer.approved = true;
+        send(viewer.socket, { type: "sender-approved-viewer", viewerId });
+        send(socket, { type: "viewer-approved", viewerId });
       } else {
-        send(session.viewer, { type: "viewer-denied" });
-        session.clients.delete(session.viewer);
-        session.viewer.sessionId = undefined;
-        session.viewer.close(1008, "Sender denied access");
-        session.viewer = null;
-        session.approved = false;
-        send(socket, { type: "viewer-denied-by-sender" });
+        send(viewer.socket, { type: "viewer-denied", viewerId });
+        session.clients.delete(viewer.socket);
+        viewer.socket.sessionId = undefined;
+        viewer.socket.close(1008, "Sender denied access");
+        session.viewers.delete(viewerId);
+        send(socket, { type: "viewer-denied-by-sender", viewerId });
       }
       return;
     }
@@ -290,13 +305,16 @@ wss.on("connection", (socket, request) => {
     if (!["offer", "answer", "ice-candidate"].includes(msg.type)) {
       return send(socket, { type: "error", message: "Unsupported message type" });
     }
-    if (!session.approved || !session.viewer || session.viewer.readyState !== WebSocket.OPEN) {
-      return send(socket, { type: "error", message: "Viewer access has not been approved" });
-    }
     if (msg.type === "offer" && socket.role !== "sender") return send(socket, { type: "error", message: "Only the sender can send an offer" });
     if (msg.type === "answer" && socket.role !== "viewer") return send(socket, { type: "error", message: "Only the viewer can send an answer" });
     if (!["sender", "viewer"].includes(socket.role)) return send(socket, { type: "error", message: "Invalid session role" });
 
+    const viewerId = socket.role === "viewer" ? socket.viewerId :
+      (typeof msg.viewerId === "string" ? msg.viewerId : "");
+    const viewer = session.viewers.get(viewerId);
+    if (!viewer || !viewer.approved || viewer.socket.readyState !== WebSocket.OPEN) {
+      return send(socket, { type: "error", message: "Viewer access has not been approved" });
+    }
     if (!msg.data || typeof msg.data !== "object" || Array.isArray(msg.data)) {
       return send(socket, { type: "error", message: "Invalid signaling data" });
     }
@@ -308,8 +326,8 @@ wss.on("connection", (socket, request) => {
         (typeof msg.data.candidate !== "string" || msg.data.candidate.length > 4 * 1024)) {
       return send(socket, { type: "error", message: "Invalid ICE candidate" });
     }
-    const peer = socket.role === "sender" ? session.viewer : session.sender;
-    send(peer, { type: msg.type, data: msg.data });
+    const peer = socket.role === "sender" ? viewer.socket : session.sender;
+    send(peer, { type: msg.type, viewerId, data: msg.data });
   });
 
   socket.on("close", () => {
@@ -321,16 +339,19 @@ wss.on("connection", (socket, request) => {
       if (session.sender === socket) {
         session.sender = null;
         // Preserve viewing consent only while the exact same viewer socket remains connected.
-        if (!session.viewer || session.viewer.readyState !== WebSocket.OPEN) session.approved = false;
-        if (session.viewer) send(session.viewer, { type: "sender-disconnected" });
+        for (const [viewerId, viewer] of session.viewers) {
+          if (viewer.socket.readyState === WebSocket.OPEN) send(viewer.socket, { type: "sender-disconnected", viewerId });
+        }
       }
       if (session.clients.size === 0) cleanSession(id);
       return;
     }
-    if (socket.role === "viewer" && session.viewer === socket) {
-      session.viewer = null;
-      session.approved = false;
-      if (session.sender) send(session.sender, { type: "viewer-left" });
+    if (socket.role === "viewer" && socket.viewerId) {
+      const viewer = session.viewers.get(socket.viewerId);
+      if (viewer && viewer.socket === socket) {
+        session.viewers.delete(socket.viewerId);
+        if (session.sender) send(session.sender, { type: "viewer-left", viewerId: socket.viewerId });
+      }
     }
     if (session.clients.size === 0) cleanSession(id);
   });
