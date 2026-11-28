@@ -8,7 +8,7 @@ on:
 
 permissions:
   actions: read
-  contents: read
+  contents: write
 
 jobs:
   signed-release:
@@ -67,13 +67,28 @@ jobs:
           test -x "$apksigner"
           "$apksigner" verify --verbose --print-certs "$apk"
 
-      - name: Upload signed release APK
+      - name: Upload signed release APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: qunview-signed-release-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 90
+
+      - name: Publish direct APK download on GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
+          test -n "$apk"
+          tag="v1.0.${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" "$apk#QunView Android APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "QunView ${tag}" \
+            --notes "Signed QunView Android APK. Install only on a device you trust."
 
       - name: Remove temporary signing key
         if: always()
